@@ -11,6 +11,8 @@ def get_config():
   data.dataset = 'CIFAR10'
   data.train_split = 'train'
   data.ndims = 3
+  data.target_class = 1
+  data.limit_data = True
   data.image_size = 32
   data.num_channels = 3
   data.num_classes = 10
@@ -28,7 +30,7 @@ def get_config():
   model.ema_rate = 0.9999
   model.normalization = 'GroupNorm'
   model.nonlinearity = 'swish'
-  model.nf = 128
+  model.nf = 64
   model.ch_mult = (1, 2, 2, 2)
   model.num_res_blocks = 2
   model.attn_resolutions = (16,8)
@@ -39,7 +41,7 @@ def get_config():
   config.train = train = ml_collections.ConfigDict()
   train.batch_size = 128
   train.n_jitted_steps = 1
-  train.n_iters = 500_000
+  train.n_iters = 30000
   train.save_every = 5_000
   train.eval_every = 10_000
   train.log_every = 50

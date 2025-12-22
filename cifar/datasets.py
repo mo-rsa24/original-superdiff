@@ -165,6 +165,13 @@ def get_dataset(config, additional_dim=None, uniform_dequantization=False, evalu
     else:
       print('loading with options')
       ds = dataset_builder.with_options(dataset_options)
+    target_class = getattr(config.data, 'target_class', None)
+    if target_class is not None:
+      print(f"!!! TRAINING FAST POC: Filtering for Class {target_class} only !!!")
+      ds = ds.filter(lambda obj: obj['label'] == target_class)
+    if getattr(config.data, 'limit_data', False):
+      print("!!! TRAINING FAST POC: Limiting to 1000 examples !!!")
+      ds = ds.take(1000)
     if labels == '<5':
       ds = ds.filter(lambda obj: obj['label'] < 5)
     elif labels == '>5':
