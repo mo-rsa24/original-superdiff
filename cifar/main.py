@@ -16,6 +16,7 @@ flags.DEFINE_string("eval_folder", "eval",
                     "The folder name for storing evaluation results")
 flags.DEFINE_string("chkpts", None,
                     "paths to checkpoints for joint evaluation (comma separated)")
+flags.DEFINE_boolean("use_wandb", False, "Whether to use Weights & Biases logging.")
 flags.mark_flags_as_required(["workdir", "config", "mode"])
 
 def launch(argv):
@@ -23,7 +24,7 @@ def launch(argv):
   os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 
   if FLAGS.mode == "train":
-    run_lib.train(FLAGS.config, FLAGS.workdir)
+    run_lib.train(FLAGS.config, FLAGS.workdir, use_wandb=FLAGS.use_wandb)
   elif FLAGS.mode == "eval_fid":
     run_lib.evaluate_fid(FLAGS.config, FLAGS.workdir, FLAGS.eval_folder, stoch=False)
   elif FLAGS.mode == "eval_fid_stoch":

@@ -9,7 +9,7 @@ export JOB_NAME="superdiff-cifar"
 
 # --- 2. Project Defaults (Specific to SuperDiff/VPSDE) ---
 # Default config points to the file identified in your codebase
-export CONFIG="cifar/configs/sm/cifar/vpsde.py"
+export CONFIG="configs/sm/cifar/vpsde.py"
 export WORKDIR="exp_output"
 export MODE="train"
 export WANDB_ID=""

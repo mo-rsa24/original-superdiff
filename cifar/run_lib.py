@@ -129,7 +129,7 @@ def init_model(key, config, workdir):
     state = ckpt_mgr.restore(ckpt_mgr.latest_step(), items=state, restore_kwargs={'restore_args': restore_args})
   return state, ckpt_mgr, optimizer, model
 
-def train(config, workdir):
+def train(config, workdir, use_wandb=False):
   key = random.PRNGKey(config.seed)
 
   # init model
@@ -137,9 +137,9 @@ def train(config, workdir):
   initial_step = int(state.step)
   key = state.key
 
-  # if jax.process_index() == 0:
-  #   wid = str(state.wandbid) if hasattr(state, 'wandbid') else None
-  #   init_wandb(config, workdir, wandb_id=wid)
+  if jax.process_index() == 0 and use_wandb:
+    wid = str(state.wandbid) if hasattr(state, 'wandbid') else None
+    init_wandb(config, workdir, wandb_id=wid)
   
   # init functions
   q_t, loss_fn, vector_field = get_vpsde(config, model, train=True)
