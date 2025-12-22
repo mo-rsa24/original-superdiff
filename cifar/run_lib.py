@@ -173,27 +173,27 @@ def train(config, workdir, use_wandb=False):
     (_, pstate), ploss = step_fn((next_key, pstate), batch)
     loss = ploss.mean()
 
-    # if jax.process_index() == 0:
-    #   if np.isnan(loss):
-    #     wandb.alert(
-    #       title="NaN Loss Detected",
-    #       text=f"Run crashed at step {step}. Loss is NaN.",
-    #       level=wandb.AlertLevel.ERROR
-    #     )
-    #     raise ValueError(f"Training diverged at step {step}")
-    #
-    #   if step % config.train.log_every == 0:
-    #     current_time = time.time()
-    #     step_time = current_time - last_time
-    #     samples_per_second = (config.train.batch_size * config.train.log_every) / step_time
-    #     last_time = current_time
-    #
-    #     # 2. Hierarchical Metric Logging
-    #     wandb.log({
-    #       "train/loss": loss.item(),
-    #       "train/step": step,
-    #       "system/samples_per_second": samples_per_second,
-    #     }, step=step)
+    if jax.process_index() == 0:
+      if np.isnan(loss):
+        wandb.alert(
+          title="NaN Loss Detected",
+          text=f"Run crashed at step {step}. Loss is NaN.",
+          level=wandb.AlertLevel.ERROR
+        )
+        raise ValueError(f"Training diverged at step {step}")
+
+      if step % config.train.log_every == 0:
+        current_time = time.time()
+        step_time = current_time - last_time
+        samples_per_second = (config.train.batch_size * config.train.log_every) / step_time
+        last_time = current_time
+
+        # 2. Hierarchical Metric Logging
+        wandb.log({
+          "train/loss": loss.item(),
+          "train/step": step,
+          "system/samples_per_second": samples_per_second,
+        }, step=step)
 
     if (step % config.train.save_every == 0) and (jax.process_index() == 0):
       saved_state = flax_utils.unreplicate(pstate)
@@ -211,13 +211,13 @@ def train(config, workdir, use_wandb=False):
                                     config.data.image_size,
                                     config.data.num_channels)[:config.eval.artifact_size]
       artifacts = inverse_scaler(artifacts)
-      # if jax.process_index() == 0:
-      #   # 6. Log Visuals
-      #   images = tutils.stack_imgs(artifacts)
-      #   wandb.log({
-      #     "eval/generated_samples": [wandb.Image(images, caption=f"Step {step}")],
-      #     "eval/nfe": jnp.mean(num_steps).item()
-      #   }, step=step)
+      if jax.process_index() == 0:
+        # 6. Log Visuals
+        images = tutils.stack_imgs(artifacts)
+        wandb.log({
+          "eval/generated_samples": [wandb.Image(images, caption=f"Step {step}")],
+          "eval/nfe": jnp.mean(num_steps).item()
+        }, step=step)
       # key, *next_keys = random.split(key, num=jax.local_device_count() + 1)
       # next_keys = jnp.asarray(next_keys)
       # bpd, num_steps = bpd_estimator(next_keys, pstate, batch)
