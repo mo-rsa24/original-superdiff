@@ -13,6 +13,7 @@ export CONFIG="configs/sm/cifar/vpsde.py"
 export WORKDIR="exp_output"
 export MODE="train"
 export WANDB_ID=""
+export USE_WANDB=""
 
 # --- 3. Pretty Print Helpers (Replicated from train_ldm_conditional.sh) ---
 CYN=$(printf '\033[36m'); BLU=$(printf '\033[34m'); BLD=$(printf '\033[1m'); RST=$(printf '\033[0m')
@@ -31,6 +32,7 @@ while [[ $# -gt 0 ]]; do
     --workdir)   export WORKDIR="$2"; shift 2 ;;
     --mode)      export MODE="$2"; shift 2 ;;
     --wandb-id)  export WANDB_ID="$2"; shift 2 ;;
+    --use_wandb) export USE_WANDB="--use_wandb"; shift ;;
     *)           echo "Unknown argument: $1"; shift ;;
   esac
 done
@@ -63,4 +65,5 @@ sbatch --partition="$SLURM_PARTITION" \
        --config "$CONFIG" \
        --workdir "$WORKDIR" \
        --mode "$MODE" \
-       ${WANDB_ID:+--wandb_id "$WANDB_ID"}
+       ${WANDB_ID:+--wandb_id "$WANDB_ID"} \
+       $USE_WANDB
