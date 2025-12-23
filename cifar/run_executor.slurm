@@ -28,4 +28,8 @@ echo "========================================"
 # --- 3. Run Code ---
 # Passes all arguments received from launcher directly to main.py
 # -u forces unbuffered output so logs appear instantly
+# Prevent JAX from grabbing 90% of GPU memory at startup (crucial for sharing GPUs or debugging)
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+# If using TensorFlow dataloaders, prevent them from competing for GPU memory
+export TF_FORCE_GPU_ALLOW_GROWTH=true
 srun python -u main.py "$@"

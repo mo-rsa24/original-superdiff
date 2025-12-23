@@ -37,12 +37,12 @@ def get_config():
 
     # training
     config.train = train = ml_collections.ConfigDict()
-    train.batch_size = 32  # <--- User requested batch size
-    train.n_jitted_steps = 1
-    train.n_iters = 30000
-    train.save_every = 5000
-    train.eval_every = 2000
-    train.log_every = 50
+    train.batch_size = 128
+    train.n_jitted_steps = 5
+    train.n_iters =    100000  # Good medium-length run
+    train.save_every = 10000  # Saves 10 checkpoints
+    train.eval_every = 10000  # Evaluates every checkpoint (aligned with save)
+    train.log_every = 100  # Vital: frequent enough to see loss curve
     train.lr = 2e-4
     train.beta1 = 0.9
     train.eps = 1e-8
@@ -51,9 +51,9 @@ def get_config():
 
     # evaluation
     config.eval = eval = ml_collections.ConfigDict()
-    eval.batch_size = 100
+    eval.batch_size = 500
     eval.artifact_size = 64
-    eval.num_samples = 50000
+    eval.num_samples = 10000
     eval.use_ema = True
     eval.estimate_bpd = True
 
