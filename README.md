@@ -73,6 +73,192 @@ python cifar/main.py --config cifar/configs/sm/cifar/vpsde.py --workdir $PWD/cif
 
 **[Protein Experiments](/applications/proteins/README.md):** for an example of how to generate proteins with SuperDiff and reproducing the protein experiments.
 
+Here is a guide describing the necessary steps to prepare and run the CIFAR-10 and split-MNIST (0-4 vs 5-9) experiments.
+
+```markdown
+# Experiment Preparation and Execution Guide
+
+This guide outlines the steps to set up the codebase, apply necessary fixes, and launch experiments for both **CIFAR-10** and **Split-MNIST**.
+
+## 1. Environment Setup
+
+Ensure your environment is set up with the necessary dependencies (JAX, TensorFlow, Flax, etc.).
+
+```bash
+# Example setup (adjust based on your cluster/local machine)
+conda create -n jax115 python=3.9
+conda activate jax115
+pip install -r requirements.txt
+
+```
+
+## 2. Codebase Preparation (Crucial for MNIST)
+
+The original codebase requires specific modifications to support split-MNIST training (training on digits <5 and >5 separately) and correct evaluation.
+
+### A. Modify `cifar/datasets.py`
+
+Update `get_dataset` to handle custom split names defined in configs.
+
+1. **Locate** the `MNIST` block in `get_dataset`.
+2. **Replace** the hardcoded `train_split` and `eval_split` with dynamic lookups:
+```python
+if config.data.dataset == 'MNIST':
+  dataset_builder = tfds.builder('mnist')
+  # Allow config to override splits (e.g., 'train<5')
+  train_split_name = getattr(config.data, 'train_split', 'train')
+  eval_split_name = getattr(config.data, 'eval_split', 'test')
+  # ... rest of the resizing logic
+
+```
+
+
+
+### B. Modify `cifar/evaluation.py`
+
+Update `load_dataset_stats` to support MNIST and split-specific statistic files.
+
+1. **Remove** the check that forces `config.data.dataset == 'CIFAR10'`.
+2. **Add logic** to append `_low` or `_high` to the filename based on the split:
+```python
+def load_dataset_stats(config, eval=False):
+  suffix = 'test' if eval else 'train'
+  dataset_name = config.data.dataset.lower()
+
+  # Detect split from config
+  train_split = getattr(config.data, 'train_split', '')
+  if '<5' in train_split:
+    dataset_name += '_low'
+  elif '>5' in train_split:
+    dataset_name += '_high'
+
+  filename = f'assets/stats/{dataset_name}_{suffix}_stats.npz'
+  # ... load and return np.load(fin)
+
+```
+
+
+
+### C. Modify `cifar/run_lib.py`
+
+Update `fid_stats` to save statistics with the correct naming convention (`_low` / `_high`) and handle grayscale images.
+
+1. **Match naming logic** used in `evaluation.py` (checking `<5` or `>5`).
+2. **Handle Channels**: MNIST is grayscale (1 channel), but Inception expects 3.
+```python
+# Inside fid_stats loop:
+if batch.shape[-1] == 1:
+  batch = np.repeat(batch, 3, axis=-1)
+
+```
+
+
+
+---
+
+## 3. Running Split-MNIST Experiments
+
+You need to train two separate models: one for digits 0-4 ("Low") and one for digits 5-9 ("High").
+
+### Step 1: Create Configurations
+
+Create two new config files in `cifar/configs/`:
+
+* **`mnist_low.py`**: Set `config.data.train_split = 'train<5'` and `config.data.eval_split = 'test<5'`.
+* **`mnist_high.py`**: Set `config.data.train_split = 'train>5'` and `config.data.eval_split = 'test>5'`.
+
+### Step 2: Generate FID Statistics (Run Once)
+
+Before training, generate the reference statistics for evaluation. This prevents crashes during the first evaluation step.
+
+**For Digits 0-4:**
+
+```bash
+./launch_train.sh \
+  --config configs/mnist_low.py \
+  --workdir . \
+  --mode fid_stats \
+  --name mnist_low_stats
+
+```
+
+**For Digits 5-9:**
+
+```bash
+./launch_train.sh \
+  --config configs/mnist_high.py \
+  --workdir . \
+  --mode fid_stats \
+  --name mnist_high_stats
+
+```
+
+### Step 3: Launch Training
+
+Now launch the training jobs. Use unique working directories.
+
+**Train Low (0-4):**
+
+```bash
+./launch_train.sh \
+  --config configs/mnist_low.py \
+  --workdir exp_output/mnist_low_run1 \
+  --mode train \
+  --name mnist_low_train
+
+```
+
+**Train High (5-9):**
+
+```bash
+./launch_train.sh \
+  --config configs/mnist_high.py \
+  --workdir exp_output/mnist_high_run1 \
+  --mode train \
+  --name mnist_high_train
+
+```
+
+---
+
+## 4. Running CIFAR-10 Experiments
+
+CIFAR-10 experiments use the standard `vpsde` configurations.
+
+### Step 1: Generate Statistics (If missing)
+
+Ensure `assets/stats/cifar10_train_stats.npz` and `cifar10_test_stats.npz` exist. If not:
+
+```bash
+./launch_train.sh \
+  --config configs/sm/cifar/vpsde.py \
+  --workdir . \
+  --mode fid_stats \
+  --name cifar_stats
+
+```
+
+### Step 2: Launch Training
+
+Run the standard Variance Preserving SDE (VPSDE) training.
+
+```bash
+./launch_train.sh \
+  --config configs/sm/cifar/vpsde.py \
+  --workdir exp_output/cifar_vpsde_run1 \
+  --mode train \
+  --name cifar_vpsde_train
+
+```
+
+## Summary Checklist
+
+* [x] **Code**: `datasets.py` updated to read split from config?
+* [x] **Code**: `evaluation.py` and `run_lib.py` updated to handle `_low`/`_high` filenames?
+* [x] **Configs**: `mnist_low.py` and `mnist_high.py` created?
+* [x] **Stats**: Ran `fid_stats` for MNIST Low, MNIST High, and CIFAR?
+* [x] **Train**: Launch training jobs with distinct `workdir` paths.
+
 
 ## Citation
 

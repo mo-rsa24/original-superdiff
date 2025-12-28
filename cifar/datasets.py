@@ -104,6 +104,68 @@ def get_dataset(config, additional_dim=None, uniform_dequantization=False, evalu
     def resize_op(img):
       img = tf.image.convert_image_dtype(img, tf.float32)
       return tf.image.resize(img, [config.data.image_size, config.data.image_size], antialias=True)
+  elif config.data.dataset == 'ChestXRay':
+    # We don't use tfds.builder here. We use a local loader.
+    dataset_builder = None
+
+    # Path setup based on user description
+    # Structure: ../datasets/cleaned/TB/train/TB and ../datasets/cleaned/TB/train/NORMAL
+    root_dir = getattr(config.data, 'root_dir', '../datasets/cleaned/TB/train')
+
+    # Determine the label to keep: 0 for NORMAL, 1 for TB (assuming alphabetical sort)
+    # You can also filter by string class names if using label_mode='categorical'
+    target_class = getattr(config.data, 'target_class', None)  # e.g., 'NORMAL' or 'TB'
+
+    def resize_op(img):
+      img = tf.image.convert_image_dtype(img, tf.float32)
+      return tf.image.resize(img, [config.data.image_size, config.data.image_size], antialias=True)
+
+    def create_local_dataset(split):
+      # We only support 'train' split for this specific folder structure provided
+      # If you have a 'test' folder, you can modify root_dir based on 'split'
+
+      # Using image_dataset_from_directory to replicate ChestXRay.py behavior
+      ds = tf.keras.utils.image_dataset_from_directory(
+        root_dir,
+        labels='inferred',
+        label_mode='categorical',  # Use string labels for easy filtering
+        class_names=['NORMAL', 'TB'],  # Force specific order
+        color_mode='grayscale',  # X-Rays are grayscale
+        batch_size=None,  # Get individual elements first
+        image_size=None,  # Resize later in preprocess_fn
+        shuffle=True,
+        seed=config.seed,
+        interpolation='bilinear'
+      )
+
+      # Extract image and label components
+      ds = ds.map(lambda x, y: {'image': x, 'label': y})
+
+      # Filter for the specific class (AND/OR experiment setup)
+      if target_class is not None:
+        # One-hot encoding: NORMAL=[1,0], TB=[0,1]
+        if target_class == 'NORMAL':
+          print("!!! Filtering Dataset: Keeping ONLY NORMAL CXRs !!!")
+          ds = ds.filter(lambda x: x['label'][0] == 1.0)
+        elif target_class == 'TB':
+          print("!!! Filtering Dataset: Keeping ONLY TB CXRs !!!")
+          ds = ds.filter(lambda x: x['label'][1] == 1.0)
+
+      # Repeat and Shuffle
+      ds = ds.repeat(count=num_epochs)
+      ds = ds.shuffle(shuffle_buffer_size)
+      ds = ds.map(preprocess_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+      # Batching
+      for batch_size in reversed(batch_dims):
+        ds = ds.batch(batch_size, drop_remainder=True)
+
+      return ds.prefetch(prefetch_size)
+
+    # Override the default return because we defined a custom create_local_dataset
+    train_ds = create_local_dataset(train_split_name)
+    eval_ds = create_local_dataset(eval_split_name)  # Uses same source if no separate test folder
+    return train_ds, eval_ds, None
 
   elif config.data.dataset == 'CIFAR10':
     dataset_builder = tfds.builder('cifar10')

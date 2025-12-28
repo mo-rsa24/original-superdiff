@@ -48,6 +48,11 @@ def load_dataset_stats(config, eval=False):
   """Load the pre-computed dataset statistics."""
   suffix = 'test' if eval else 'train'
   dataset_name = config.data.dataset.lower()
+
+  if config.data.dataset == 'ChestXRay':
+      target = getattr(config.data, 'target_class', 'all')
+      dataset_name += f"_{target.lower()}"
+
   train_split = getattr(config.data, 'train_split', '')
   if '<5' in train_split:
       dataset_name += '_low'
