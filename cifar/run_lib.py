@@ -381,9 +381,9 @@ def evaluate_joint_fid(config, workdir, eval_folder, checkpoints, stoch):
 def fid_stats(config, workdir, fid_folder="assets/stats"):
   fid_dir = os.path.join(workdir, fid_folder)
   tf.io.gfile.makedirs(fid_dir)
-  
+
   inception_model = evaluation.get_inception_model()
-  
+
   def get_pools(data_iter):
     all_pools = []
     batch_id = 0
@@ -394,7 +394,12 @@ def fid_stats(config, workdir, fid_folder="assets/stats"):
         break
       print("Making FID stats -- step: %d" % (batch_id))
       batch = jax.tree_map(lambda x: x._numpy(), batch)
-      batch = (batch['image']*255).astype(np.uint8).reshape((-1, config.data.image_size, config.data.image_size, 3))
+      batch = (batch['image'] * 255).astype(np.uint8).reshape(
+        (-1, config.data.image_size, config.data.image_size, config.data.num_channels))
+      # Handle grayscale for Inception (expecting 3 channels)
+      if batch.shape[-1] == 1:
+        batch = np.repeat(batch, 3, axis=-1)
+
       # Force garbage collection before calling TensorFlow code for Inception network
       gc.collect()
       latents = evaluation.run_inception_distributed(batch, inception_model)
@@ -403,21 +408,32 @@ def fid_stats(config, workdir, fid_folder="assets/stats"):
       gc.collect()
       batch_id += 1
     return np.concatenate(all_pools, axis=0)
-  
+
   train_ds, test_ds, dataset_builder = datasets.get_dataset(config,
-    additional_dim=None, uniform_dequantization=False, evaluation=True)
+                                                            additional_dim=None, uniform_dequantization=False,
+                                                            evaluation=True)
   train_iter, test_iter = iter(train_ds), iter(test_ds)
 
+  # Determine dataset name suffix based on split
+  dataset_name = config.data.dataset.lower()
+  train_split = getattr(config.data, 'train_split', '')
+  if '<5' in train_split:
+    dataset_name += '_low'
+  elif '>5' in train_split:
+    dataset_name += '_high'
+
   train_pools = get_pools(train_iter)
-  filename = f'{config.data.dataset.lower()}_train_stats.npz'
+  filename = f'{dataset_name}_train_stats.npz'
+  print(f"Saving train stats to {filename}...")
   with tf.io.gfile.GFile(os.path.join(fid_dir, filename), "wb") as fout:
     io_buffer = io.BytesIO()
     np.savez_compressed(io_buffer, pool_3=train_pools)
     fout.write(io_buffer.getvalue())
   del train_pools
-    
+
   test_pools = get_pools(test_iter)
-  filename = f'{config.data.dataset.lower()}_test_stats.npz'
+  filename = f'{dataset_name}_test_stats.npz'
+  print(f"Saving test stats to {filename}...")
   with tf.io.gfile.GFile(os.path.join(fid_dir, filename), "wb") as fout:
     io_buffer = io.BytesIO()
     np.savez_compressed(io_buffer, pool_3=test_pools)

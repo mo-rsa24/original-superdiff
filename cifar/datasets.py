@@ -98,8 +98,8 @@ def get_dataset(config, additional_dim=None, uniform_dequantization=False, evalu
   # Create dataset builders for each dataset.
   if config.data.dataset == 'MNIST':
     dataset_builder = tfds.builder('mnist')
-    train_split_name = config.data.train_split
-    eval_split_name = 'test'
+    train_split_name = getattr(config.data, 'train_split', 'train')
+    eval_split_name = getattr(config.data, 'eval_split', 'test')
 
     def resize_op(img):
       img = tf.image.convert_image_dtype(img, tf.float32)

@@ -47,11 +47,19 @@ def fid(X, Y, eps=1e-6):
 def load_dataset_stats(config, eval=False):
   """Load the pre-computed dataset statistics."""
   suffix = 'test' if eval else 'train'
-  if config.data.dataset == 'CIFAR10':
-    filename = f'assets/stats/cifar10_{suffix}_stats.npz'
-  else:
-    raise ValueError(f'Dataset {config.data.dataset} stats not found.')
+  dataset_name = config.data.dataset.lower()
+  train_split = getattr(config.data, 'train_split', '')
+  if '<5' in train_split:
+      dataset_name += '_low'
+  elif '>5' in train_split:
+      dataset_name += '_high'
+
+  filename = f'assets/stats/{dataset_name}_{suffix}_stats.npz'
+
+  # Removed the 'if CIFAR10' block to support MNIST
+  if not tf.io.gfile.exists(filename):
+      raise ValueError(f'Stats file {filename} not found. Did you run --mode=fid_stats?')
 
   with tf.io.gfile.GFile(filename, 'rb') as fin:
-    stats = np.load(fin)
-    return stats
+      stats = np.load(fin)
+      return stats
