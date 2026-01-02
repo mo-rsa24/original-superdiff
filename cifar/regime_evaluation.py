@@ -3,7 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from torch.utils.data import DataLoader
-from cifar.models.torch_experts import SmallMNISTClassifier
+
+from cifar.models.experts import SmallMNISTClassifier
+
 
 def train_mnist_classifier(mnist_train, device, epochs=2, bs=256, lr=1e-3):
     clf = SmallMNISTClassifier().to(device)
