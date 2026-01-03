@@ -2,9 +2,6 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --exclude=mscluster65,mscluster76
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
 
 set -euo pipefail
 
