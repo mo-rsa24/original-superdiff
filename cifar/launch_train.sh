@@ -2,11 +2,23 @@
 set -euo pipefail
 
 # Using tput for better compatibility and cleaner syntax
-BOLD=$(tput bold); CYAN=$(tput setaf 6); BLUE=$(tput setaf 4); RESET=$(tput sgr0)
+if [[ -t 1 ]]; then
+  BOLD=$(tput bold)
+  CYAN=$(tput setaf 6)
+  BLUE=$(tput setaf 4)
+  RESET=$(tput sgr0)
+else
+  BOLD=""; CYAN=""; BLUE=""; RESET=""
+fi
 
 status_line() { printf "${BLUE}▶${RESET} ${BOLD}%-20s${RESET} %s\n" "$1:" "${2:-}"; }
-header()      { printf "\n${BLUE}${BOLD}# %s${RESET}\n" "$1"; printf "${BLUE}%.0s-$(seq 1 50)${RESET}\n"; }
 
+rule() { printf "${BLUE}%0.s-${RESET}" {1..50}; printf "\n"; }
+
+header() {
+  printf "\n${BLUE}${BOLD}# %s${RESET}\n" "$1"
+  rule
+}
 # --- 1. Define Defaults (Environment & SLURM) ---
 export ENV_NAME="jaxstack"
 export SLURM_PARTITION="bigbatch"
