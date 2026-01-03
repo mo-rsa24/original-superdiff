@@ -233,9 +233,12 @@ def main(argv):
                      pin_memory=True)
 
     # -- Model Setup --
-    ModelCls = CenterBiasedExpert if cfg.model_arch == "CenterBiasedExpert" else FullyConvExpertBigger
-    model4 = ModelCls(base=cfg.base_channels, n_blocks=cfg.get('n_blocks', 6)).to(device)
-    model7 = ModelCls(base=cfg.base_channels, n_blocks=cfg.get('n_blocks', 6)).to(device)
+    if cfg.model_arch == "CenterBiasedExpert":
+        model4 = CenterBiasedExpert(base=cfg.base_channels).to(device)
+        model7 = CenterBiasedExpert(base=cfg.base_channels).to(device)
+    else:
+        model4 = FullyConvExpertBigger(base=cfg.base_channels, n_blocks=cfg.get('n_blocks', 6)).to(device)
+        model7 = FullyConvExpertBigger(base=cfg.base_channels, n_blocks=cfg.get('n_blocks', 6)).to(device)
 
     if FLAGS.mode == "train":
         print(f"Training Regime {cfg.regime} (Expert 4)...")
