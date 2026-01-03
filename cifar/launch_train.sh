@@ -15,6 +15,7 @@ export TIME_LIMIT="72:00:00"
 # --- 2. Parse Regime and Setup Paths ---
 # Usage: ./launch_train.sh [A|B|C]
 REGIME=${1:-A}
+shift
 REGIME_LOWER=$(echo "$REGIME" | tr '[:upper:]' '[:lower:]')
 
 export JOB_NAME="rq1-regime-${REGIME}"
