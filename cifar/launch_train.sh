@@ -18,8 +18,8 @@ REGIME=${1:-A}
 REGIME_LOWER=$(echo "$REGIME" | tr '[:upper:]' '[:lower:]')
 
 export JOB_NAME="rq1-regime-${REGIME}"
-export CONFIG="configs/sm/mnist/regime_${REGIME_LOWER}.py"
-export WORKDIR="runs/regime_${REGIME}"
+export CONFIG="cifar/configs/sm/mnist/regime_${REGIME_LOWER}.py"
+export WORKDIR="cifar/runs/regime_${REGIME}"
 export WANDB_PROJECT="ebm-rq1"
 
 # --- 3. Parse Command Line Overrides (Optional) ---
@@ -51,7 +51,7 @@ sbatch --partition="$SLURM_PARTITION" \
        --output="logs/%x-%j.out" \
        --error="logs/%x-%j.err" \
        --export=ALL,ENV_NAME=$ENV_NAME \
-       run_executor.slurm \
+       cifar/run_executor.slurm \
        --config "$CONFIG" \
        --workdir "$WORKDIR" \
        --mode train \
