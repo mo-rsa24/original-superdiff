@@ -87,7 +87,7 @@ def ddim_sample_single(model, schedule, shape, device, steps=50):
     img = torch.randn(shape, device=device)
 
     # Simple linear spacing of timesteps
-    times = torch.linspace(schedule.config.T - 1, 0, steps=steps).long().to(device)
+    times = torch.linspace(schedule.cfg.T - 1, 0, steps=steps).long().to(device)
 
     for i in range(len(times)):
         t = times[i]
@@ -96,8 +96,8 @@ def ddim_sample_single(model, schedule, shape, device, steps=50):
         t_batch = torch.full((b,), t, device=device, dtype=torch.long)
 
         # Get alphas
-        alpha_bar = schedule.alphas_cumprod[t]
-        alpha_bar_prev = schedule.alphas_cumprod[t_prev] if t_prev >= 0 else torch.tensor(1.0, device=device)
+        alpha_bar = schedule.sqrt_alpha_bar[t]
+        alpha_bar_prev = schedule.sqrt_alpha_bar[t_prev] if t_prev >= 0 else torch.tensor(1.0, device=device)
 
         # Predict noise
         noise_pred = model(img, t_batch.float())
@@ -141,11 +141,11 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
         x = x * 2.0 - 1.0  # Normalize [0,1] -> [-1, 1]
 
         B = x.shape[0]
-        t = torch.randint(0, schedule.config.T, (B,), device=device).long()
+        t = torch.randint(0, schedule.cfg.T, (B,), device=device).long()
         noise = torch.randn_like(x)
 
-        sqrt_alpha_bar = schedule.sqrt_alphas_cumprod[t].view(-1, 1, 1, 1)
-        sqrt_one_minus_alpha_bar = schedule.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1, 1)
+        sqrt_alpha_bar = schedule.sqrt_alpha_bar[t].view(-1, 1, 1, 1)
+        sqrt_one_minus_alpha_bar = schedule.sqrt_one_minus_alpha_bar[t].view(-1, 1, 1, 1)
 
         x_t = sqrt_alpha_bar * x + sqrt_one_minus_alpha_bar * noise
 
