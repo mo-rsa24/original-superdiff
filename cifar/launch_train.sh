@@ -55,7 +55,7 @@ status_line "📂 Workdir: $WORKDIR"
 status_line "⚙️ Mode:    train"
 status_line "📈 Project: $WANDB_PROJECT"
 status_line "========================================================"
-printf "${BLUE}%.0s-$(seq 1 50)${RESET}\n"
+
 # --- 5. Submit to SLURM ---
 # Pass the regime-specific variables and flags to run_executor.slurm
 sbatch --partition="$SLURM_PARTITION" \
