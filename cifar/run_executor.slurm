@@ -5,13 +5,15 @@
 
 set -euo pipefail
 
+
 # --- 1. Environment Setup ---
 mkdir -p logs
+set +u
 source ~/.bashrc
-
 # Activate environment (Defaults to jax115 if not set)
 echo "Activating Environment: ${ENV_NAME:-jaxstack}"
 mamba activate "${ENV_NAME:-jaxstack}"
+set -u
 
 # --- 2. Execution Flags ---
 # Prevent JAX and TF from pre-allocating all VRAM

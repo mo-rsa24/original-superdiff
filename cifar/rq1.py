@@ -120,16 +120,6 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
     """
     model.train()
     optimizer = optim.Adam(model.parameters(), lr=2e-4)
-
-    warmup_steps = 500
-
-    def lr_lambda(current_step):
-        if current_step < warmup_steps:
-            return float(current_step) / float(max_steps(1, warmup_steps))
-        return 1.0
-
-    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-
     ema = EMA(model, decay=0.999)
     criterion = nn.MSELoss()
 
@@ -164,8 +154,6 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
         loss = criterion(noise_pred, noise)
         loss.backward()
 
-        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-
         optimizer.step()
         ema.update()
 
@@ -180,8 +168,6 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
             log_dict = {
                 f"{name}/loss": loss.item(),
                 f"{name}/step": step,
-                f"{name}/grad_norm": grad_norm.item(),
-                f"{name}/lr": scheduler.get_last_lr()[0],
                 f"{name}/samples_per_sec": sps
             }
             print(f"[{name}] Step {step}/{max_steps} | Loss: {loss.item():.4f}")
