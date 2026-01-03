@@ -1,69 +1,59 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Using tput for better compatibility and cleaner syntax
+BOLD=$(tput bold); CYAN=$(tput setaf 6); BLUE=$(tput setaf 4); RESET=$(tput sgr0)
+
+status_line() { printf "${BLUE}▶${RESET} ${BOLD}%-20s${RESET} %s\n" "$1:" "$2"; }
+header()      { printf "\n${BLUE}${BOLD}# %s${RESET}\n" "$1"; printf "${BLUE}%.0s-$(seq 1 50)${RESET}\n"; }
+
 # --- 1. Define Defaults (Environment & SLURM) ---
-export ENV_NAME="jax115"
+export ENV_NAME="jaxstack"
 export SLURM_PARTITION="bigbatch"
 export TIME_LIMIT="72:00:00"
-export JOB_NAME="superdiff-cifar"
 
-# --- 2. Project Defaults (Specific to SuperDiff/VPSDE) ---
-# Default config points to the file identified in your codebase
-export CONFIG="configs/sm/cifar/vpsde.py"
-export WORKDIR="exp_output"
-export MODE="train"
-export WANDB_ID=""
-export USE_WANDB=""
+# --- 2. Parse Regime and Setup Paths ---
+# Usage: ./launch_train.sh [A|B|C]
+REGIME=${1:-A}
+REGIME_LOWER=$(echo "$REGIME" | tr '[:upper:]' '[:lower:]')
 
-# --- 3. Pretty Print Helpers (Replicated from train_ldm_conditional.sh) ---
-CYN=$(printf '\033[36m'); BLU=$(printf '\033[34m'); BLD=$(printf '\033[1m'); RST=$(printf '\033[0m')
-kv(){ printf "  ${CYN}%-22s${RST} %s\n" "$1" "$2"; }
-rule(){ printf "${BLU}%.0s" $(seq 1 60); printf "${RST}\n"; }
+export JOB_NAME="rq1-regime-${REGIME}"
+export CONFIG="configs/sm/mnist/regime_${REGIME_LOWER}.py"
+export WORKDIR="runs/regime_${REGIME}"
+export WANDB_PROJECT="ebm-rq1"
 
-# --- 4. Parse Command Line Overrides ---
-# Allows: ./launch_train.sh --partition stampede --config my_config.py
-while [[ $# -gt 0 ]]; do
+# --- 3. Parse Command Line Overrides (Optional) ---
+# Allows overriding the defaults if needed
+while [[ $# -gt 1 ]]; do
   case $1 in
     --partition) export SLURM_PARTITION="$2"; shift 2 ;;
-    --name)      export JOB_NAME="$2"; shift 2 ;;
     --time)      export TIME_LIMIT="$2"; shift 2 ;;
-    # Project specific args
-    --config)    export CONFIG="$2"; shift 2 ;;
-    --workdir)   export WORKDIR="$2"; shift 2 ;;
-    --mode)      export MODE="$2"; shift 2 ;;
-    --wandb-id)  export WANDB_ID="$2"; shift 2 ;;
-    --use_wandb) export USE_WANDB="--use_wandb"; shift ;;
-    *)           echo "Unknown argument: $1"; shift ;;
+    *) shift ;;
   esac
 done
 
-# --- 5. Print Submission Banner ---
-rule
-printf "${BLD}${BLU}🚀 Submitting SuperDiff Job: ${JOB_NAME}${RST}\n"
-rule
-kv "SLURM Partition" "${SLURM_PARTITION}"
-kv "Time Limit"      "${TIME_LIMIT}"
-kv "Log Directory"   "logs/${JOB_NAME}"
-printf "\n"
-kv "🐍 Environment"  "${ENV_NAME}"
-kv "📜 Config"       "${CONFIG}"
-kv "📂 Workdir"      "${WORKDIR}"
-kv "⚙️ Mode"         "${MODE}"
-if [[ -n "$WANDB_ID" ]]; then
-    kv "📈 W&B ID"   "${WANDB_ID}"
-fi
-rule
+# --- 4. Print Submission Banner ---
 
-# --- 6. Submit to SLURM ---
-# We pass the python arguments (flags) to the executor script
+status_line "========================================================"
+header "🚀 Submitting RQ1 Job: ${JOB_NAME}"
+status_line "--------------------------------------------------------"
+status_line "📜 Config:  $CONFIG"
+status_line "📂 Workdir: $WORKDIR"
+status_line "⚙️ Mode:    train"
+status_line "📈 Project: $WANDB_PROJECT"
+status_line "========================================================"
+printf "${BLUE}%.0s-$(seq 1 50)${RESET}\n"
+# --- 5. Submit to SLURM ---
+# Pass the regime-specific variables and flags to run_executor.slurm
 sbatch --partition="$SLURM_PARTITION" \
        --job-name="$JOB_NAME" \
        --time="$TIME_LIMIT" \
        --output="logs/%x-%j.out" \
        --error="logs/%x-%j.err" \
+       --export=ALL,ENV_NAME=$ENV_NAME \
        run_executor.slurm \
        --config "$CONFIG" \
        --workdir "$WORKDIR" \
-       --mode "$MODE" \
-       ${WANDB_ID:+--wandb_id "$WANDB_ID"} \
-       $USE_WANDB
+       --mode train \
+       --wandb_project "$WANDB_PROJECT" \
+       --sample_every 5000
