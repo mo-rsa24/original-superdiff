@@ -120,6 +120,16 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
     """
     model.train()
     optimizer = optim.Adam(model.parameters(), lr=2e-4)
+
+    warmup_steps = 500
+
+    def lr_lambda(current_step):
+        if current_step < warmup_steps:
+            return float(current_step) / float(max_steps(1, warmup_steps))
+        return 1.0
+
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
     ema = EMA(model, decay=0.999)
     criterion = nn.MSELoss()
 
@@ -153,6 +163,9 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
         noise_pred = model(x_t, t.float())
         loss = criterion(noise_pred, noise)
         loss.backward()
+
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
         optimizer.step()
         ema.update()
 
@@ -167,6 +180,8 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
             log_dict = {
                 f"{name}/loss": loss.item(),
                 f"{name}/step": step,
+                f"{name}/grad_norm": grad_norm.item(),
+                f"{name}/lr": scheduler.get_last_lr()[0],
                 f"{name}/samples_per_sec": sps
             }
             print(f"[{name}] Step {step}/{max_steps} | Loss: {loss.item():.4f}")
@@ -176,14 +191,17 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
 
         # -- Periodic Validation Sampling --
         if step % sample_every == 0 and step > 0:
-            print(f"[{name}] Generating validation samples at step {step}...")
-            model.eval()
-            # Sample 16 images
-            with torch.no_grad():
-                val_samples = ddim_sample_single(model, schedule, shape=(16, 1, 48, 48), device=device, steps=20)
+            print(f"[{name}] Generating validation samples (Online vs EMA) at step {step}...")
 
-            img_path = os.path.join(FLAGS.workdir, "samples", f"{name}_step_{step}.png")
-            save_images_grid(val_samples, f"Validation {name}", img_path, nrow=4, log_wandb=True, step=step)
+            for m_type, m_obj in [("online", model), ("ema", ema.shadow)]:
+                m_obj.eval()
+                with torch.no_grad():
+                    val_samples = ddim_sample_single(m_obj, schedule, shape=(16, 1, 48, 48), device=device, steps=20)
+
+                img_path = os.path.join(FLAGS.workdir, "samples", f"{name}_{m_type}_step_{step}.png")
+                save_images_grid(val_samples, f"Val {name} {m_type.upper()}", img_path, nrow=4, log_wandb=True,
+                                 step=step)
+
             model.train()
 
     return model, ema
