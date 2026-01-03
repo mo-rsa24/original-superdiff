@@ -33,7 +33,7 @@ REGIME_LOWER=$(echo "$REGIME" | tr '[:upper:]' '[:lower:]')
 export JOB_NAME="rq1-regime-${REGIME}"
 export CONFIG="cifar/configs/sm/mnist/regime_${REGIME_LOWER}.py"
 export WORKDIR="cifar/runs/regime_${REGIME}"
-export WANDB_PROJECT="ebm-rq1"
+export WANDB_PROJECT="ebm-rq1-run-2"
 
 # --- 3. Parse Command Line Overrides (Optional) ---
 # Allows overriding the defaults if needed
@@ -69,4 +69,4 @@ sbatch --partition="$SLURM_PARTITION" \
        --workdir "$WORKDIR" \
        --mode train \
        --wandb_project "$WANDB_PROJECT" \
-       --sample_every 5000
+       --sample_every 10000
