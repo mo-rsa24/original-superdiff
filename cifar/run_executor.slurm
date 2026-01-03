@@ -23,4 +23,4 @@ export TF_FORCE_GPU_ALLOW_GROWTH=true
 # --- 3. Run rq1.py ---
 # All arguments passed from sbatch (in launch_train.sh) are caught by "$@"
 echo "Executing: python -u rq1.py $@"
-srun python3 -u cifar.rq1.py "$@"
+srun python3 -u cifar/rq1.py "$@"
