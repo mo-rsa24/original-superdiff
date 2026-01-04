@@ -33,7 +33,7 @@ REGIME_LOWER=$(echo "$REGIME" | tr '[:upper:]' '[:lower:]')
 export JOB_NAME="rq1-regime-${REGIME}"
 export CONFIG="cifar/configs/sm/mnist/regime_${REGIME_LOWER}.py"
 export WORKDIR="cifar/runs/regime_${REGIME}"
-export WANDB_PROJECT="ebm-rq1-run-2"
+export WANDB_PROJECT="ebm-rq1-run-3"
 
 # --- 3. Parse Command Line Overrides (Optional) ---
 # Allows overriding the defaults if needed
