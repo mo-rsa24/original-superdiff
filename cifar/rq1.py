@@ -138,7 +138,7 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
 
         x, _ = batch
         x = x.to(device)
-        x = x * 2.0 - 1.0  # Normalize [0,1] -> [-1, 1]
+        #x = x * 2.0 - 1.0  # Normalize [0,1] -> [-1, 1]
 
         B = x.shape[0]
         t = torch.randint(0, schedule.cfg.T, (B,), device=device).long()

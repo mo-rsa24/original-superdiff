@@ -5,10 +5,14 @@ __pycache__/
 
 # C extensions
 *.so
-
+.vscode/
 # Distribution / packaging
 .Python
 build/
+logs/
+wandb/
+runs/
+data/
 develop-eggs/
 dist/
 downloads/
