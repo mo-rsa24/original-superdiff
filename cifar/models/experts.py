@@ -62,13 +62,15 @@ class SpatialSelfAttention(nn.Module):
         h_w = h * w
         q, k, v = self.qkv(self.norm(x)).chunk(3, dim=1)
 
-        q = q.reshape(b, self.num_heads, self.head_dim, h_w).transpose(2, 3)  # [b, heads, hw, d]
-        k = k.reshape(b, self.num_heads, self.head_dim, h_w)  # [b, heads, d, hw]
-        v = v.reshape(b, self.num_heads, self.head_dim, h_w).transpose(2, 3)  # [b, heads, hw, d]
+        # Reshape to (B, heads, HW, head_dim) for scaled-dot-product attention.
+        # Using PyTorch's SDPA avoids materializing the full HW x HW attention matrix,
+        # which was causing OOM when training on 48x48 feature maps.
+        q = q.reshape(b, self.num_heads, self.head_dim, h_w).transpose(2, 3)
+        k = k.reshape(b, self.num_heads, self.head_dim, h_w).transpose(2, 3)
+        v = v.reshape(b, self.num_heads, self.head_dim, h_w).transpose(2, 3)
 
-        attn = torch.softmax(torch.matmul(q, k) * self.scale, dim=-1)  # [b, heads, hw, hw]
-        out = torch.matmul(attn, v)  # [b, heads, hw, d]
-        out = out.transpose(2, 3).reshape(b, c, h, w)
+        attn_out = F.scaled_dot_product_attention(q, k, v)  # [b, heads, hw, d]
+        out = attn_out.transpose(2, 3).reshape(b, c, h, w)
         return self.out(out)
 
 class FullyConvExpertBigger(nn.Module):
