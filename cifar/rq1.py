@@ -169,9 +169,9 @@ def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
         if return_stats:
             eps_stats.append({
                 "t": t,
-                "eps4_norm": float(eps4.norm(dim=(1,2,3)).mean().item()),
-                "eps7_norm": float(eps7.norm(dim=(1,2,3)).mean().item()),
-                "eps_norm": float(eps.norm(dim=(1,2,3)).mean().item()),
+                "eps4_norm": float(eps4.flatten(1).norm(dim=1).mean().item()),
+                "eps7_norm": float(eps7.flatten(1).norm(dim=1).mean().item()),
+                "eps_norm": float(eps.flatten(1).norm(dim=1).mean().item()),
             })
 
         if i == len(t_seq) - 1:
