@@ -20,6 +20,8 @@ set -u
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export TF_FORCE_GPU_ALLOW_GROWTH=true
 
+export PYTHONPATH="${PWD}:${PYTHONPATH:-}"
+echo "PYTHONPATH set to: $PYTHONPATH"
 # --- 3. Run rq1.py ---
 # All arguments passed from sbatch (in launch_train.sh) are caught by "$@"
 echo "Executing: python -u rq1.py $@"
