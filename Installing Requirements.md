@@ -1,5 +1,116 @@
-Here’s a clean, *micromamba-first* way to set this up on WSL2, using a Python version that’s most likely to work with the mix of **TensorFlow 2.19**, **PyTorch 2.5.1**, and **JAX 0.5.3** in your requirements file .
+## Running the scripts
 
+### **Important Setup Note**
+
+For these scripts to run correctly in PyCharm, you must set the **Working directory** in your Run Configuration to the root folder of the project (the parent of the `cifar` folder), typically:
+`.../original-superdiff-regime-c-idea-1-poe-overlap-calibration/`
+
+---
+
+### **1. Script: `cifar/rq1.py` (Training & Evaluation)**
+
+These configurations train the experts. Change `--mode=train` to `--mode=eval` to run evaluation on existing checkpoints.
+
+**MNIST Regimes (Full Training)**
+
+* **Regime A:**
+```text
+--config=cifar/configs/sm/mnist/regime_a.py --workdir=runs/mnist/regime_a --mode=train
+
+```
+
+
+* **Regime B:**
+```text
+--config=cifar/configs/sm/mnist/regime_b.py --workdir=runs/mnist/regime_b --mode=train
+
+```
+
+
+* **Regime C:**
+```text
+--config=cifar/configs/sm/mnist/regime_c.py --workdir=runs/mnist/regime_c --mode=train
+
+```
+
+
+
+**Sanity Checks (Fast/Debug Training)**
+
+* **Sanity Regime A:**
+```text
+--config=cifar/configs/sm/sanity/regime_a.py --workdir=runs/sanity/regime_a --mode=train
+
+```
+
+
+* **Sanity Regime B:**
+```text
+--config=cifar/configs/sm/sanity/regime_b.py --workdir=runs/sanity/regime_b --mode=train
+
+```
+
+
+* **Sanity Regime C:**
+```text
+--config=cifar/configs/sm/sanity/regime_c.py --workdir=runs/sanity/regime_c --mode=train
+
+```
+
+
+
+---
+
+### **2. Script: `cifar/visualize_rq1.py` (Visualization)**
+
+These configurations visualize the datasets or the outputs of your trained models.
+
+**Mode: Dataset (Visualize Inputs)**
+
+* **Regime A Data:**
+```text
+--regime=A --mode=dataset --save_dir=assets/visualizations/regime_a
+
+```
+
+
+* **Regime B Data:**
+```text
+--regime=B --mode=dataset --save_dir=assets/visualizations/regime_b
+
+```
+
+
+* **Regime C Data:**
+```text
+--regime=C --mode=dataset --save_dir=assets/visualizations/regime_c
+
+```
+
+
+
+**Mode: Model (Visualize Generations)**
+*Note: These assume you have trained the models using the `rq1.py` parameters above. The paths point to where `rq1.py` saves checkpoints by default.*
+
+* **Regime A Model (MNIST):**
+```text
+--regime=A --mode=model --weights_4=runs/mnist/regime_a/regime_A_expert4.pth --weights_7=runs/mnist/regime_a/regime_A_expert7.pth --save_dir=assets/results/regime_a
+
+```
+
+
+* **Regime B Model (MNIST):**
+```text
+--regime=B --mode=model --weights_4=runs/mnist/regime_b/regime_B_expert4.pth --weights_7=runs/mnist/regime_b/regime_B_expert7.pth --save_dir=assets/results/regime_b
+
+```
+
+
+* **Regime C Model (MNIST):**
+```text
+--regime=C --mode=model --weights_4=runs/mnist/regime_c/regime_C_expert4.pth --weights_7=runs/mnist/regime_c/regime_C_expert7.pth --save_dir=assets/results/regime_c
+
+```
 ## Recommended Python version
 
 **Python 3.11**

@@ -1,4 +1,3 @@
-import argparse
 import os
 import torch
 import torch.nn as nn
@@ -9,7 +8,6 @@ import matplotlib.pyplot as plt
 import copy
 import time
 import wandb
-import numpy as np
 from torchvision import datasets
 from torch.utils.data import DataLoader
 from ml_collections import config_flags
@@ -343,10 +341,26 @@ def main(argv):
         ds7 = TwoDigitMNISTCanvasClean(mnist_train, mode="exists7", digit_size_range=cfg.digit_size_range,
                                        min_margin=cfg.min_margin)
     elif cfg.regime == "C":
-        ds4 = TwoDigitMNISTCanvasCleanPlus(mnist_train, mode="exists4", forbid_digit=4,
-                                           digit_size_range=cfg.digit_size_range, min_margin=cfg.min_margin)
-        ds7 = TwoDigitMNISTCanvasCleanPlus(mnist_train, mode="exists7", forbid_digit=7,
-                                           digit_size_range=cfg.digit_size_range, min_margin=cfg.min_margin)
+        ds4 = TwoDigitMNISTCanvasCleanPlus(
+            mnist_train,
+            mode="exists4",
+            forbid_digit=4,
+            digit_size_range=cfg.digit_size_range,
+            min_margin=cfg.min_margin,
+            p_extra=cfg.get("p_extra", 0.3),
+            target_overlap_digit=7,
+            target_overlap_prob=cfg.get("target_overlap_prob", 0.0),
+        )
+        ds7 = TwoDigitMNISTCanvasCleanPlus(
+            mnist_train,
+            mode="exists7",
+            forbid_digit=7,
+            digit_size_range=cfg.digit_size_range,
+            min_margin=cfg.min_margin,
+            p_extra=cfg.get("p_extra", 0.3),
+            target_overlap_digit=4,
+            target_overlap_prob=cfg.get("target_overlap_prob", 0.0),
+        )
     else:
         raise ValueError(f"Unknown regime {cfg.regime}")
 
