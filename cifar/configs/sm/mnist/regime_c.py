@@ -1,17 +1,10 @@
-import ml_collections
+from .regime_common import build_regime_config
 
 def get_config():
-    config = ml_collections.ConfigDict()
-    config.regime = "C"
-    config.model_arch = "FullyConvExpertBigger"
-    config.data_mode = "clean_plus"
-    config.base_channels = 96
-    config.n_blocks = 6
-    config.train_steps = 500000
-    config.batch_size = 128
-    # Regime C Constraints
-    config.digit_size_range = (18, 22)
-    config.min_margin = 4
-    config.p_extra = 0.4
-    config.target_overlap_prob = 0.35
-    return config
+    return build_regime_config(
+        train_split='train>5',
+        eval_split='test>5',
+        nf=96,
+        n_iters=50000,
+        regime_label='C',
+    )
