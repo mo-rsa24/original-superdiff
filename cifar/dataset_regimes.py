@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 import torchvision.transforms.functional as TF
 import numpy as np
+from collections import Counter
 
 # ---------- helpers: ink masks + dilation ----------
 def binarize_ink(glyph, thr=0.20, relative=True):
@@ -207,3 +208,19 @@ def worker_init_fn(worker_id):
     info = torch.utils.data.get_worker_info()
     ds = info.dataset
     ds.rng = np.random.RandomState(ds.base_seed + 1000 * worker_id)
+
+    def summarize_digit_support(dataset: Dataset, draws: int = 512):
+        """
+        Lightweight diagnostic: sample which digits the synthetic canvas attempts to place
+        without altering dataset state.
+        """
+        if not hasattr(dataset, "rng") or not hasattr(dataset, "_choose_digits_and_labels"):
+            return {}
+
+        state = dataset.rng.get_state()
+        counter = Counter()
+        for _ in range(int(draws)):
+            digits, _ = dataset._choose_digits_and_labels()
+            counter.update(digits)
+        dataset.rng.set_state(state)
+        return dict(counter)
