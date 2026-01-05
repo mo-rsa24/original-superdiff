@@ -187,7 +187,7 @@ class TwoDigitMNISTCanvasCleanPlus(TwoDigitMNISTCanvasClean):
         self.target_overlap_prob = float(target_overlap_prob)
 
 
-def _choose_digits_and_labels(self):
+    def _choose_digits_and_labels(self):
         digits, y = super()._choose_digits_and_labels()
         if self.p_extra > 0 and self.rng.rand() < self.p_extra:
             n_extra = int(self.rng.randint(1, self.max_extra + 1))
