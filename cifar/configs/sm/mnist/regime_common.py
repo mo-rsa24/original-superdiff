@@ -12,6 +12,8 @@ def build_regime_config(
     n_iters: int = 50_000,
     ema_rate: float = 0.9999,
     regime_label: Optional[str] = None,
+    data_mode: Optional[str] = None,
+    model_name: str = "score-net",
 ):
   """Constructs a SuperDiff-style config for MNIST regimes."""
   config = ml_collections.ConfigDict()
@@ -24,6 +26,8 @@ def build_regime_config(
   data.dataset = 'MNIST'
   data.train_split = train_split
   data.eval_split = eval_split
+  if data_mode is not None:
+    data.mode = data_mode
   data.ndims = 3
   data.image_size = 32
   data.num_channels = 1
@@ -36,7 +40,7 @@ def build_regime_config(
 
   # model
   config.model = model = ml_collections.ConfigDict()
-  model.name = 'score-net'
+  model.name = model_name
   model.conditioned = False
   model.loss = 'dsm'
   model.ema_rate = ema_rate

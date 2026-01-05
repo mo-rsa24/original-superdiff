@@ -5,6 +5,8 @@ def get_config():
         train_split='train[:50%]',
         eval_split='test',
         nf=96,
-        n_iters=50000,
+        n_iters=50_000,
         regime_label='A',
+        data_mode='centered',
+        model_name='fullyconv-expert-bigger',
     )
