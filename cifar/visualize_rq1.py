@@ -65,10 +65,14 @@ def get_dataset_loaders(regime, mnist_base, batch_size):
 
     elif regime == "C":
         # Regime C: Random placement with distractors (Matched Bias)
-        ds4 = TwoDigitMNISTCanvasCleanPlus(mnist_base, mode="exists4", forbid_digit=4, digit_size_range=(18, 22),
-                                           min_margin=4, seed=FLAGS.seed)
-        ds7 = TwoDigitMNISTCanvasCleanPlus(mnist_base, mode="exists7", forbid_digit=7, digit_size_range=(18, 22),
-                                           min_margin=4, seed=FLAGS.seed + 1)
+        ds4 = TwoDigitMNISTCanvasCleanPlus(
+            mnist_base, mode="exists4", forbid_digit=4, digit_size_range=(18, 22),
+            min_margin=4, seed=FLAGS.seed, p_extra=0.4,
+            target_overlap_digit=7, target_overlap_prob=0.35)
+        ds7 = TwoDigitMNISTCanvasCleanPlus(
+            mnist_base, mode="exists7", forbid_digit=7, digit_size_range=(18, 22),
+            min_margin=4, seed=FLAGS.seed + 1, p_extra=0.4,
+            target_overlap_digit=4, target_overlap_prob=0.35)
         ds_both = TwoDigitMNISTCanvasCleanPlus(mnist_base, mode="both47", digit_size_range=(18, 22), min_margin=4,
                                                seed=FLAGS.seed + 2)
 

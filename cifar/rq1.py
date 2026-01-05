@@ -138,7 +138,8 @@ def ddim_sample_single(model, schedule, shape, device, steps=50, return_trajecto
     return img
 @torch.no_grad()
 def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
-                          w4=1.0, w7=1.0, normalize_eps=True, seed=0, device='cuda',
+                          w4=1.0, w7=1.0, normalize_eps=True, renormalize_sum=True,
+                          seed=0, device='cuda',
                           return_stats=False):
     """
     DDIM sampler for PoE with optional epsilon statistics for debugging.
@@ -163,6 +164,8 @@ def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
             eps7 = eps7 / (eps7.std(dim=(1,2,3), keepdim=True) + 1e-6)
 
         eps = w4*eps4 + w7*eps7
+        if renormalize_sum:
+            eps = eps / (eps.std(dim=(1, 2, 3), keepdim=True) + 1e-6)
         abar_t = schedule.alpha_bar[t]
         x0 = (x - torch.sqrt(1.0 - abar_t) * eps) / (torch.sqrt(abar_t) + 1e-8)
 
@@ -327,10 +330,26 @@ def main(argv):
         ds7 = TwoDigitMNISTCanvasClean(mnist_train, mode="exists7", digit_size_range=cfg.digit_size_range,
                                        min_margin=cfg.min_margin)
     elif cfg.regime == "C":
-        ds4 = TwoDigitMNISTCanvasCleanPlus(mnist_train, mode="exists4", forbid_digit=4,
-                                           digit_size_range=cfg.digit_size_range, min_margin=cfg.min_margin)
-        ds7 = TwoDigitMNISTCanvasCleanPlus(mnist_train, mode="exists7", forbid_digit=7,
-                                           digit_size_range=cfg.digit_size_range, min_margin=cfg.min_margin)
+        ds4 = TwoDigitMNISTCanvasCleanPlus(
+            mnist_train,
+            mode="exists4",
+            forbid_digit=4,
+            digit_size_range=cfg.digit_size_range,
+            min_margin=cfg.min_margin,
+            p_extra=cfg.get("p_extra", 0.3),
+            target_overlap_digit=7,
+            target_overlap_prob=cfg.get("target_overlap_prob", 0.0),
+        )
+        ds7 = TwoDigitMNISTCanvasCleanPlus(
+            mnist_train,
+            mode="exists7",
+            forbid_digit=7,
+            digit_size_range=cfg.digit_size_range,
+            min_margin=cfg.min_margin,
+            p_extra=cfg.get("p_extra", 0.3),
+            target_overlap_digit=4,
+            target_overlap_prob=cfg.get("target_overlap_prob", 0.0),
+        )
     else:
         raise ValueError(f"Unknown regime {cfg.regime}")
 

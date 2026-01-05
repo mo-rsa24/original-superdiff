@@ -59,7 +59,8 @@ def ddim_sample(model, schedule: DiffusionSchedule, shape, steps=100, eta=0.0, s
 
 @torch.no_grad()
 def ddim_sample_poe(model4, model7, schedule: DiffusionSchedule, shape, steps=100, eta=0.0,
-                    w4=1.0, w7=1.0, normalize_eps=True, seed=0, device='cuda'):
+                    w4=1.0, w7=1.0, normalize_eps=True, renormalize_sum=True,
+                    seed=0, device='cuda'):
     torch.manual_seed(seed)
     model4.eval(); model7.eval()
     x = torch.randn(shape, device=device)
@@ -77,6 +78,8 @@ def ddim_sample_poe(model4, model7, schedule: DiffusionSchedule, shape, steps=10
             eps7 = eps7 / (eps7.std(dim=(1,2,3), keepdim=True) + 1e-6)
 
         eps = w4*eps4 + w7*eps7
+        if renormalize_sum:
+            eps = eps / (eps.std(dim=(1, 2, 3), keepdim=True) + 1e-6)
         abar_t = schedule.alpha_bar[t]
         x0 = (x - torch.sqrt(1.0 - abar_t) * eps) / (torch.sqrt(abar_t) + 1e-8)
 

@@ -173,19 +173,34 @@ class TwoDigitMNISTCanvasClean(Dataset):
         raise RuntimeError("Could not generate a valid sample; relax constraints.")
 
 class TwoDigitMNISTCanvasCleanPlus(TwoDigitMNISTCanvasClean):
-    def __init__(self, *args, p_extra=0.3, max_extra=1, forbid_digit=None, **kwargs):
+    def __init__(self, *args, p_extra=0.3, max_extra=1, forbid_digit=None,
+                 target_overlap_digit=None, target_overlap_prob=0.0, **kwargs):
+        """
+        Extension of the clean canvas generator that can (optionally) bias extra digits
+        toward a target digit to increase explicit support overlap between experts.
+        """
         super().__init__(*args, **kwargs)
         self.p_extra = float(p_extra)
         self.max_extra = int(max_extra)
-        self.forbid_digit = forbid_digit
+        self.forbid_digit = None if forbid_digit is None else int(forbid_digit)
+        self.target_overlap_digit = None if target_overlap_digit is None else int(target_overlap_digit)
+        self.target_overlap_prob = float(target_overlap_prob)
 
-    def _choose_digits_and_labels(self):
+
+def _choose_digits_and_labels(self):
         digits, y = super()._choose_digits_and_labels()
         if self.p_extra > 0 and self.rng.rand() < self.p_extra:
             n_extra = int(self.rng.randint(1, self.max_extra + 1))
             for _ in range(n_extra):
-                d = int(self.rng.randint(0, 10))
-                if self.forbid_digit is not None and d == int(self.forbid_digit):
+                use_target = (self.target_overlap_digit is not None) and (self.rng.rand() < self.target_overlap_prob)
+                if use_target:
+                    d = self.target_overlap_digit
+                else:
+                    d = int(self.rng.randint(0, 10))
+
+                # enforce forbidding and avoid degenerate conflicts
+                if self.forbid_digit is not None and d == self.forbid_digit:
+                    # shift once; if still conflict, wrap-around still guarantees a valid digit
                     d = (d + 1) % 10
                 digits.append(d)
         return digits, y
