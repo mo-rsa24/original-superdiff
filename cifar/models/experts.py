@@ -65,6 +65,7 @@ class FullyConvExpertBigger(nn.Module):
 
         self.in_conv = nn.Conv2d(in_ch, base, 3, padding=1)
         self.dilated = MultiDilatedBlock(base, tdim, dilation_rates=dilation_rates)
+        self.blocks = nn.ModuleList([ResBlock(base, tdim) for _ in range(n_blocks)])
         self.post_blocks = nn.ModuleList([ResBlock(base, tdim) for _ in range(post_dilated_blocks)])
         self.mid = nn.Conv2d(base, base, 3, padding=1)
         self.out = nn.Conv2d(base, in_ch, 3, padding=1)
