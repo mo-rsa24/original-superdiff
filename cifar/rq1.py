@@ -17,7 +17,7 @@ from absl import app, flags
 
 from cifar.dynamics.diffusion import DiffusionSchedule, DiffusionConfig, ddim_sample_poe
 from cifar.dataset_regimes import filter_digit_subset, PadTo48, TwoDigitMNISTCanvasClean, TwoDigitMNISTCanvasCleanPlus, \
-    worker_init_fn
+    worker_init_fn,  summarize_digit_support
 from cifar.models.experts import CenterBiasedExpert, FullyConvExpertBigger
 from cifar.regime_evaluation import train_mnist_classifier, eval_existential
 
@@ -132,9 +132,8 @@ def ddim_sample_single(model, schedule, shape, device, steps=50, return_trajecto
                 "noise_pred": noise_pred.detach().cpu(),
             })
 
-        if return_trajectory:
-            return img, trajectory
-
+    if return_trajectory:
+        return img, trajectory
     return img
 @torch.no_grad()
 def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
@@ -224,6 +223,11 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
     start_time = time.time()
 
     print(f"Starting training for {name}...")
+    if hasattr(model, "describe"):
+        desc = model.describe()
+        print(f"[{name}] architecture: {desc}")
+        if wandb.run is not None:
+            wandb.log({f"{name}/arch_{k}": v for k, v in desc.items()}, step=0)
 
     while step < max_steps:
         try:
@@ -297,6 +301,18 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
 
     return model, ema
 
+def describe_schedule(schedule: DiffusionSchedule):
+    stats = {
+        "beta_start": float(schedule.cfg.beta_start),
+        "beta_end": float(schedule.cfg.beta_end),
+        "T": int(schedule.cfg.T),
+        "alpha_bar_0": float(schedule.alpha_bar[0].item()),
+        "alpha_bar_Tm1": float(schedule.alpha_bar[-1].item()),
+        "sqrt_one_minus_alpha_bar_max": float(schedule.sqrt_one_minus_alpha_bar.max().item()),
+    }
+    monotone = torch.all(schedule.alpha_bar[:-1] >= schedule.alpha_bar[1:]).item()
+    stats["alpha_bar_monotone_decreasing"] = bool(monotone)
+    return stats
 
 def main(argv):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -347,11 +363,19 @@ def main(argv):
     try:
         batch_dbg4, _ = next(iter(dl4))
         save_debug_batch(batch_dbg4, FLAGS.workdir, tag="train_batch_expert4", step=0, log_wandb=FLAGS.use_wandb)
+        support4 = summarize_digit_support(ds4, draws=256)
+        print(f"Digit support expert4 dataset (synthetic planner): {support4}")
+        if wandb.run is not None:
+            wandb.log({f"dataset/expert4_support_{k}": v for k, v in support4.items()}, step=0)
     except StopIteration:
         pass
     try:
         batch_dbg7, _ = next(iter(dl7))
         save_debug_batch(batch_dbg7, FLAGS.workdir, tag="train_batch_expert7", step=0, log_wandb=FLAGS.use_wandb)
+        support7 = summarize_digit_support(ds7, draws=256)
+        print(f"Digit support expert7 dataset (synthetic planner): {support7}")
+        if wandb.run is not None:
+            wandb.log({f"dataset/expert7_support_{k}": v for k, v in support7.items()}, step=0)
     except StopIteration:
         pass
     # -- Model Setup --
