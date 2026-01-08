@@ -25,17 +25,16 @@ def get_config():
 
     # model (Identical to low)
     config.model = model = ml_collections.ConfigDict()
-    model.name = 'anet'
-    model.loss = 'sam'
-    model.sigma = 1e-1
-    model.anneal_sigma = False
-    model.ema_rate = 0.99
+    model.name = 'score-net'
+    model.conditioned = False
+    model.loss = 'dsm'
+    model.ema_rate = 0.9999
     model.normalization = 'GroupNorm'
     model.nonlinearity = 'swish'
-    model.nf = 32
-    model.ch_mult = (1, 2, 2)
+    model.nf = 64
+    model.ch_mult = (1, 2, 2, 2)
     model.num_res_blocks = 2
-    model.attn_resolutions = (16,)
+    model.attn_resolutions = (16, 8)
     model.resamp_with_conv = True
     model.dropout = 0.1
 
