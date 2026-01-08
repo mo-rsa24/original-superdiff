@@ -83,7 +83,7 @@ rsync -a \
 # --- 7. Submit to SLURM (from staging dir) ---
 mkdir -p "${REPO_ROOT}/logs"
 cd "$STAGING_DIR"
-mkdir -p "${$STAGING_DIR}/cifar/runs"
+mkdir -p "${STAGING_DIR}/cifar/runs"
 JOB_ID=$(sbatch --partition="$SLURM_PARTITION" \
        --job-name="$JOB_NAME" \
        --time="$TIME_LIMIT" \
