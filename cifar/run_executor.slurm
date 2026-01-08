@@ -11,7 +11,11 @@ set -euo pipefail
 # Ensure log directory exists
 mkdir -p logs
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-cd "$SCRIPT_DIR"
+if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "${SLURM_SUBMIT_DIR}/cifar" ]]; then
+  cd "${SLURM_SUBMIT_DIR}/cifar"
+else
+  cd "$SCRIPT_DIR"
+fi
 # Load Conda/Mamba (Adjust path to your shell config if needed)
 set +u
 source ~/.bashrc
