@@ -10,12 +10,15 @@ set -euo pipefail
 # --- 1. Environment Setup ---
 # Ensure log directory exists
 mkdir -p logs
-
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+cd "$SCRIPT_DIR"
 # Load Conda/Mamba (Adjust path to your shell config if needed)
+set +u
 source ~/.bashrc
 
 echo "Activate environment: ${ENV_NAME:-jax115}"
 mamba activate "${ENV_NAME:-jax115}"
+set -u
 
 # --- 2. Execution Info ---
 echo "========================================"
@@ -23,6 +26,7 @@ echo "Starting Job on Node: $(hostname)"
 echo "Date: $(date)"
 echo "Python: $(which python)"
 echo "Arguments: $@"
+echo "Commit: ${GIT_COMMIT_SHORT:-unknown} | Branch: ${GIT_BRANCH:-unknown}"
 echo "========================================"
 
 # --- 3. Run Code ---
@@ -32,4 +36,6 @@ echo "========================================"
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 # If using TensorFlow dataloaders, prevent them from competing for GPU memory
 export TF_FORCE_GPU_ALLOW_GROWTH=true
+export PYTHONPATH="${PWD}:${PYTHONPATH:-}"
+echo "PYTHONPATH set to: $PYTHONPATH"
 srun python -u main.py "$@"
