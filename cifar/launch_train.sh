@@ -17,12 +17,15 @@ export WANDB_ID="${WANDB_ID:-}"
 export USE_WANDB="${USE_WANDB:-}"
 
 
-# --- 3. Pretty Print Helpers (Replicated from train_ldm_conditional.sh) ---
 if [[ -t 1 ]]; then
-  BLD=$(tput bold); CYN=$(tput setaf 6); BLU=$(tput setaf 4); RST=$(tput sgr0)
+  BOLD=$(tput bold); CYAN=$(tput setaf 6); BLUE=$(tput setaf 4); RED=$(tput setaf 1); RESET=$(tput sgr0)
 else
-  BLD=""; CYN=""; BLU=""; RST=""
+  BOLD=""; CYAN=""; BLUE=""; RED=""; RESET=""
 fi
+
+status_line() { printf "${BLUE}▶${RESET} ${BOLD}%-20s${RESET} %s\n" "$1:" "${2:-}"; }
+rule() { printf "${BLUE}%0.s-${RESET}" {1..50}; printf "\n"; }
+header() { printf "\n${BLUE}${BOLD}# %s${RESET}\n" "$1"; rule; }
 
 # --- 4. Parse Command Line Overrides ---
 # Allows: ./launch_train.sh --partition stampede --config my_config.py
@@ -46,27 +49,27 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 GIT_HASH=$(git rev-parse --short HEAD)
 GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 STAGING_DIR="${STAGING_ROOT}/${JOB_NAME}_${GIT_HASH}_${TIMESTAMP}"
+
 # --- 5. Print Submission Banner ---
+header "🚀 Submitting SuperDiff Job: ${JOB_NAME}"
+status_line "SLURM Partition" "${SLURM_PARTITION}"
+status_line "Time Limit"      "${TIME_LIMIT}"
+status_line "Log Directory"   "logs/${JOB_NAME}"
 rule
-printf "${BLD}${BLU}🚀 Submitting SuperDiff Job: ${JOB_NAME}${RST}\n"
-rule
-kv "SLURM Partition" "${SLURM_PARTITION}"
-kv "Time Limit"      "${TIME_LIMIT}"
-kv "Log Directory"   "logs/${JOB_NAME}"
-printf "\n"
-kv "🐍 Environment"  "${ENV_NAME}"
-kv "📜 Config"       "${CONFIG}"
-kv "📂 Workdir"      "${WORKDIR}"
-kv "⚙️ Mode"         "${MODE}"
-kv "🌿 Branch"       "${GIT_BRANCH}"
-kv "🔖 Commit"       "${GIT_HASH}"
+status_line "🐍 Environment"  "${ENV_NAME}"
+status_line "📜 Config"       "${CONFIG}"
+status_line "📂 Workdir"      "${WORKDIR}"
+status_line "⚙️ Mode"         "${MODE}"
+status_line "🌿 Branch"       "${GIT_BRANCH}"
+status_line "🔖 Commit"       "${GIT_HASH}"
 if [[ -n "$WANDB_ID" ]]; then
-    kv "📈 W&B ID"   "${WANDB_ID}"
+  status_line "📈 W&B ID" "${WANDB_ID}"
 fi
 rule
 
+
 # --- 6. Snapshot to Staging (avoid git race conditions on cluster) ---
-kv "📦 Staging To" "${STAGING_DIR}"
+status_line "📦 Staging To" "${STAGING_DIR}"
 mkdir -p "$STAGING_DIR"
 rsync -a \
   --exclude 'logs' \
@@ -80,6 +83,7 @@ rsync -a \
 # --- 7. Submit to SLURM (from staging dir) ---
 mkdir -p "${REPO_ROOT}/logs"
 cd "$STAGING_DIR"
+mkdir -p "${$STAGING_DIR}/cifar/runs"
 JOB_ID=$(sbatch --partition="$SLURM_PARTITION" \
        --job-name="$JOB_NAME" \
        --time="$TIME_LIMIT" \
@@ -93,6 +97,6 @@ JOB_ID=$(sbatch --partition="$SLURM_PARTITION" \
        ${WANDB_ID:+--wandb_id "$WANDB_ID"} \
        $USE_WANDB | awk '{print $4}')
 
-kv "🎉 Submitted" "Job ID: ${JOB_ID}"
-kv "📝 Logs at"   "${REPO_ROOT}/logs/${JOB_NAME}-${JOB_ID}.out"
+status_line "🎉 Submitted" "Job ID: ${JOB_ID}"
+status_line "📝 Logs at"   "${REPO_ROOT}/logs/${JOB_NAME}-${JOB_ID}.out"
 cd "$REPO_ROOT"
