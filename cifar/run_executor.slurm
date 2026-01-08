@@ -20,8 +20,8 @@ fi
 set +u
 source ~/.bashrc
 
-echo "Activate environment: ${ENV_NAME:-jax115}"
-mamba activate "${ENV_NAME:-jax115}"
+echo "Activate environment: ${ENV_NAME:-jaxstack}"
+mamba activate "${ENV_NAME:-jaxstack}"
 set -u
 
 # --- 2. Execution Info ---

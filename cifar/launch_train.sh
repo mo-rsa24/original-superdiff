@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # --- 1. Define Defaults (Environment & SLURM) ---
-export ENV_NAME="${ENV_NAME:-jax115}"
+export ENV_NAME="${ENV_NAME:-jaxstack}"
 export SLURM_PARTITION="${SLURM_PARTITION:-bigbatch}"
 export TIME_LIMIT="${TIME_LIMIT:-72:00:00}"
 export STAGING_ROOT="${STAGING_ROOT:-${HOME}/cluster_staging}"

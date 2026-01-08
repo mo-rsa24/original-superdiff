@@ -65,188 +65,201 @@ def central_crop(image, size):
   return tf.image.crop_to_bounding_box(image, top, left, size, size)
 
 
+def build_preprocess_fn(config, resize_op, evaluation, uniform_dequantization):
+    def preprocess_fn(d):
+        """Basic preprocessing function scales data to [0, 1) and randomly flips."""
+        img = resize_op(d['image'])
+        if config.data.random_flip and not evaluation:
+            img = tf.image.random_flip_left_right(img)
+        if uniform_dequantization:
+            img = (tf.random.uniform(img.shape, dtype=tf.float32) + img * 255.) / 256.
+        return dict(image=img, label=d['label'])
+
+    return preprocess_fn
+
+
 def get_dataset(config, additional_dim=None, uniform_dequantization=False, evaluation=False):
-  """Create data loaders for training and evaluation.
+    """Create data loaders for training and evaluation.
 
-  Args:
-    config: A ml_collection.ConfigDict parsed from config files.
-    additional_dim: An integer or `None`. If present, add one additional dimension to the output data,
-      which equals the number of steps jitted together.
-    uniform_dequantization: If `True`, add uniform dequantization to images.
-    evaluation: If `True`, fix number of epochs to 1.
+    Args:
+      config: A ml_collection.ConfigDict parsed from config files.
+      additional_dim: An integer or `None`. If present, add one additional dimension to the output data,
+        which equals the number of steps jitted together.
+      uniform_dequantization: If `True`, add uniform dequantization to images.
+      evaluation: If `True`, fix number of epochs to 1.
 
-  Returns:
-    train_ds, eval_ds, dataset_builder.
-  """
-  # Compute batch size for this worker.
-  batch_size = config.train.batch_size if not evaluation else config.eval.batch_size
-  if batch_size % jax.device_count() != 0:
-    raise ValueError(f'Batch sizes ({batch_size} must be divided by'
-                     f'the number of devices ({jax.device_count()})')
+    Returns:
+      train_ds, eval_ds, dataset_builder.
+    """
+    # Compute batch size for this worker.
+    batch_size = config.train.batch_size if not evaluation else config.eval.batch_size
+    if batch_size % jax.device_count() != 0:
+        raise ValueError(f'Batch sizes ({batch_size} must be divided by'
+                         f'the number of devices ({jax.device_count()})')
 
-  per_device_batch_size = batch_size // jax.device_count()
-  # Reduce this when image resolution is too large and data pointer is stored
-  shuffle_buffer_size = 10000
-  prefetch_size = tf.data.experimental.AUTOTUNE
-  num_epochs = None if not evaluation else 1
-  # Create additional data dimension when jitting multiple steps together
-  if additional_dim is None:
-    batch_dims = [jax.local_device_count(), per_device_batch_size]
-  else:
-    batch_dims = [jax.local_device_count(), additional_dim, per_device_batch_size]
-
-  # Create dataset builders for each dataset.
-  if config.data.dataset == 'MNIST':
-    dataset_builder = tfds.builder('mnist')
-    train_split_name = getattr(config.data, 'train_split', 'train')
-    eval_split_name = getattr(config.data, 'eval_split', 'test')
-
-    def resize_op(img):
-      img = tf.image.convert_image_dtype(img, tf.float32)
-      return tf.image.resize(img, [config.data.image_size, config.data.image_size], antialias=True)
-  elif config.data.dataset == 'ChestXRay':
-    # We don't use tfds.builder here. We use a local loader.
-    dataset_builder = None
-
-    # Path setup based on user description
-    # Structure: ../datasets/cleaned/TB/train/TB and ../datasets/cleaned/TB/train/NORMAL
-    root_dir = getattr(config.data, 'root_dir', '../datasets/cleaned/TB/train')
-
-    # Determine the label to keep: 0 for NORMAL, 1 for TB (assuming alphabetical sort)
-    # You can also filter by string class names if using label_mode='categorical'
-    target_class = getattr(config.data, 'target_class', None)  # e.g., 'NORMAL' or 'TB'
-
-    def resize_op(img):
-      img = tf.image.convert_image_dtype(img, tf.float32)
-      return tf.image.resize(img, [config.data.image_size, config.data.image_size], antialias=True)
-
-    def create_local_dataset(split):
-      # We only support 'train' split for this specific folder structure provided
-      # If you have a 'test' folder, you can modify root_dir based on 'split'
-
-      # Using image_dataset_from_directory to replicate ChestXRay.py behavior
-      ds = tf.keras.utils.image_dataset_from_directory(
-        root_dir,
-        labels='inferred',
-        label_mode='categorical',  # Use string labels for easy filtering
-        class_names=['NORMAL', 'TB'],  # Force specific order
-        color_mode='grayscale',  # X-Rays are grayscale
-        batch_size=None,  # Get individual elements first
-        image_size=None,  # Resize later in preprocess_fn
-        shuffle=True,
-        seed=config.seed,
-        interpolation='bilinear'
-      )
-
-      # Extract image and label components
-      ds = ds.map(lambda x, y: {'image': x, 'label': y})
-
-      # Filter for the specific class (AND/OR experiment setup)
-      if target_class is not None:
-        # One-hot encoding: NORMAL=[1,0], TB=[0,1]
-        if target_class == 'NORMAL':
-          print("!!! Filtering Dataset: Keeping ONLY NORMAL CXRs !!!")
-          ds = ds.filter(lambda x: x['label'][0] == 1.0)
-        elif target_class == 'TB':
-          print("!!! Filtering Dataset: Keeping ONLY TB CXRs !!!")
-          ds = ds.filter(lambda x: x['label'][1] == 1.0)
-
-      # Repeat and Shuffle
-      ds = ds.repeat(count=num_epochs)
-      ds = ds.shuffle(shuffle_buffer_size)
-      ds = ds.map(preprocess_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-      # Batching
-      for batch_size in reversed(batch_dims):
-        ds = ds.batch(batch_size, drop_remainder=True)
-
-      return ds.prefetch(prefetch_size)
-
-    # Override the default return because we defined a custom create_local_dataset
-    train_ds = create_local_dataset(train_split_name)
-    eval_ds = create_local_dataset(eval_split_name)  # Uses same source if no separate test folder
-    return train_ds, eval_ds, None
-
-  elif config.data.dataset == 'CIFAR10':
-    dataset_builder = tfds.builder('cifar10')
-    train_split_name = config.data.train_split
-    eval_split_name = 'test'
-
-    def resize_op(img):
-      img = tf.image.convert_image_dtype(img, tf.float32)
-      return tf.image.resize(img, [config.data.image_size, config.data.image_size], antialias=True)
-
-  elif config.data.dataset == 'SVHN':
-    dataset_builder = tfds.builder('svhn_cropped')
-    train_split_name = config.data.train_split
-    eval_split_name = 'test'
-
-    def resize_op(img):
-      img = tf.image.convert_image_dtype(img, tf.float32)
-      return tf.image.resize(img, [config.data.image_size, config.data.image_size], antialias=True)
-
-
-  elif config.data.dataset == 'CELEBA':
-    dataset_builder = tfds.builder('celeb_a')
-    train_split_name = config.data.train_split
-    eval_split_name = 'validation'
-
-    def resize_op(img):
-      img = tf.image.convert_image_dtype(img, tf.float32)
-      img = central_crop(img, 140)
-      img = resize_small(img, config.data.image_size)
-      return img
-  else:
-    raise NotImplementedError(
-      f'Dataset {config.data.dataset} not yet supported.')
-
-  def preprocess_fn(d):
-    """Basic preprocessing function scales data to [0, 1) and randomly flips."""
-    img = resize_op(d['image'])
-    if config.data.random_flip and not evaluation:
-      img = tf.image.random_flip_left_right(img)
-    if uniform_dequantization:
-      img = (tf.random.uniform(img.shape, dtype=tf.float32) + img * 255.) / 256.
-    return dict(image=img, label=d['label'])
-
-  def create_dataset(dataset_builder, split):
-    labels = 'all'
-    if (split[-2:] == '<5') or (split[-2:] == '>5'):
-      labels = split[-2:]
-      split = split[:-2]
-    dataset_options = tf.data.Options()
-    dataset_options.experimental_optimization.map_parallelization = True
-    dataset_options.threading.private_threadpool_size = 48
-    dataset_options.threading.max_intra_op_parallelism = 1
-    read_config = tfds.ReadConfig(options=dataset_options)
-    if isinstance(dataset_builder, tfds.core.DatasetBuilder):
-      print('loading without options')
-      dataset_builder.download_and_prepare()
-      ds = dataset_builder.as_dataset(
-        split=split, shuffle_files=True, read_config=read_config)
+    per_device_batch_size = batch_size // jax.device_count()
+    # Reduce this when image resolution is too large and data pointer is stored
+    shuffle_buffer_size = 10000
+    prefetch_size = tf.data.experimental.AUTOTUNE
+    num_epochs = None if not evaluation else 1
+    # Create additional data dimension when jitting multiple steps together
+    if additional_dim is None:
+        batch_dims = [jax.local_device_count(), per_device_batch_size]
     else:
-      print('loading with options')
-      ds = dataset_builder.with_options(dataset_options)
-    target_class = getattr(config.data, 'target_class', None)
-    if target_class is not None:
-      print(f"!!! TRAINING FAST POC: Filtering for Class {target_class} only !!!")
-      ds = ds.filter(lambda obj: obj['label'] == target_class)
-    if getattr(config.data, 'limit_data', False):
-      print("!!! TRAINING FAST POC: Limiting to 1000 examples !!!")
-      ds = ds.take(1000)
-    if labels == '<5':
-      ds = ds.filter(lambda obj: obj['label'] < 5)
-    elif labels == '>5':
-      ds = ds.filter(lambda obj: obj['label'] >= 5)
-    else:
-      pass
-    ds = ds.repeat(count=num_epochs)
-    ds = ds.shuffle(shuffle_buffer_size)
-    ds = ds.map(preprocess_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    for batch_size in reversed(batch_dims):
-      ds = ds.batch(batch_size, drop_remainder=True)
-    return ds.prefetch(prefetch_size)
+        batch_dims = [jax.local_device_count(), additional_dim, per_device_batch_size]
 
-  train_ds = create_dataset(dataset_builder, train_split_name)
-  eval_ds = create_dataset(dataset_builder, eval_split_name)
-  return train_ds, eval_ds, dataset_builder
+    preprocess_fn = None
+    # Create dataset builders for each dataset.
+    if config.data.dataset == 'MNIST':
+        dataset_builder = tfds.builder('mnist')
+        train_split_name = getattr(config.data, 'train_split', 'train')
+        eval_split_name = getattr(config.data, 'eval_split', 'test')
+
+        def resize_op(img):
+            img = tf.image.convert_image_dtype(img, tf.float32)
+            return tf.image.resize(img, [config.data.image_size, config.data.image_size], antialias=True)
+
+        preprocess_fn = build_preprocess_fn(config, resize_op, evaluation, uniform_dequantization)
+    elif config.data.dataset == 'ChestXRay':
+        # We don't use tfds.builder here. We use a local loader.
+        dataset_builder = None
+
+        # Path setup based on user description
+        # Structure: ../datasets/cleaned/TB/train/TB and ../datasets/cleaned/TB/train/NORMAL
+        root_dir = getattr(config.data, 'root_dir', '../datasets/cleaned/TB/train')
+        train_split_name = getattr(config.data, 'train_split', 'train')
+        eval_split_name = getattr(config.data, 'eval_split', 'train')
+        # Determine the label to keep: 0 for NORMAL, 1 for TB (assuming alphabetical sort)
+        # You can also filter by string class names if using label_mode='categorical'
+        target_class = getattr(config.data, 'target_class', None)  # e.g., 'NORMAL' or 'TB'
+
+        def resize_op(img):
+            img = tf.image.convert_image_dtype(img, tf.float32)
+            return tf.image.resize(img, [config.data.image_size, config.data.image_size], antialias=True)
+
+        preprocess_fn = build_preprocess_fn(config, resize_op, evaluation, uniform_dequantization)
+
+        def create_local_dataset(split):
+            # We only support 'train' split for this specific folder structure provided
+            # If you have a 'test' folder, you can modify root_dir based on 'split'
+
+            # Using image_dataset_from_directory to replicate ChestXRay.py behavior
+            ds = tf.keras.utils.image_dataset_from_directory(
+                root_dir,
+                labels='inferred',
+                label_mode='categorical',  # Use string labels for easy filtering
+                class_names=['NORMAL', 'TB'],  # Force specific order
+                color_mode='grayscale',  # X-Rays are grayscale
+                batch_size=None,  # Get individual elements first
+                image_size=None,  # Resize later in preprocess_fn
+                shuffle=True,
+                seed=config.seed,
+                interpolation='bilinear'
+            )
+
+            # Extract image and label components
+            ds = ds.map(lambda x, y: {'image': x, 'label': y})
+
+            # Filter for the specific class (AND/OR experiment setup)
+            if target_class is not None:
+                # One-hot encoding: NORMAL=[1,0], TB=[0,1]
+                if target_class == 'NORMAL':
+                    print("!!! Filtering Dataset: Keeping ONLY NORMAL CXRs !!!")
+                    ds = ds.filter(lambda x: x['label'][0] == 1.0)
+                elif target_class == 'TB':
+                    print("!!! Filtering Dataset: Keeping ONLY TB CXRs !!!")
+                    ds = ds.filter(lambda x: x['label'][1] == 1.0)
+
+            # Repeat and Shuffle
+            ds = ds.repeat(count=num_epochs)
+            ds = ds.shuffle(shuffle_buffer_size)
+            ds = ds.map(preprocess_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+            # Batching
+            for batch_size in reversed(batch_dims):
+                ds = ds.batch(batch_size, drop_remainder=True)
+
+            return ds.prefetch(prefetch_size)
+
+        # Override the default return because we defined a custom create_local_dataset
+        train_ds = create_local_dataset(train_split_name)
+        eval_ds = create_local_dataset(eval_split_name)  # Uses same source if no separate test folder
+        return train_ds, eval_ds, None
+
+    elif config.data.dataset == 'CIFAR10':
+        dataset_builder = tfds.builder('cifar10')
+        train_split_name = config.data.train_split
+        eval_split_name = 'test'
+
+        def resize_op(img):
+            img = tf.image.convert_image_dtype(img, tf.float32)
+            return tf.image.resize(img, [config.data.image_size, config.data.image_size], antialias=True)
+
+        preprocess_fn = build_preprocess_fn(config, resize_op, evaluation, uniform_dequantization)
+    elif config.data.dataset == 'SVHN':
+        dataset_builder = tfds.builder('svhn_cropped')
+        train_split_name = config.data.train_split
+        eval_split_name = 'test'
+
+        def resize_op(img):
+            img = tf.image.convert_image_dtype(img, tf.float32)
+            return tf.image.resize(img, [config.data.image_size, config.data.image_size], antialias=True)
+
+        preprocess_fn = build_preprocess_fn(config, resize_op, evaluation, uniform_dequantization)
+    elif config.data.dataset == 'CELEBA':
+        dataset_builder = tfds.builder('celeb_a')
+        train_split_name = config.data.train_split
+        eval_split_name = 'validation'
+
+        def resize_op(img):
+            img = tf.image.convert_image_dtype(img, tf.float32)
+            img = central_crop(img, 140)
+            img = resize_small(img, config.data.image_size)
+            return img
+
+        preprocess_fn = build_preprocess_fn(config, resize_op, evaluation, uniform_dequantization)
+    else:
+        raise NotImplementedError(
+            f'Dataset {config.data.dataset} not yet supported.')
+
+    def create_dataset(dataset_builder, split):
+        labels = 'all'
+        if (split[-2:] == '<5') or (split[-2:] == '>5'):
+            labels = split[-2:]
+            split = split[:-2]
+        dataset_options = tf.data.Options()
+        dataset_options.experimental_optimization.map_parallelization = True
+        dataset_options.threading.private_threadpool_size = 48
+        dataset_options.threading.max_intra_op_parallelism = 1
+        read_config = tfds.ReadConfig(options=dataset_options)
+        if isinstance(dataset_builder, tfds.core.DatasetBuilder):
+            print('loading without options')
+            dataset_builder.download_and_prepare()
+            ds = dataset_builder.as_dataset(
+                split=split, shuffle_files=True, read_config=read_config)
+        else:
+            print('loading with options')
+            ds = dataset_builder.with_options(dataset_options)
+        target_class = getattr(config.data, 'target_class', None)
+        if target_class is not None:
+            print(f"!!! TRAINING FAST POC: Filtering for Class {target_class} only !!!")
+            ds = ds.filter(lambda obj: obj['label'] == target_class)
+        if getattr(config.data, 'limit_data', False):
+            print("!!! TRAINING FAST POC: Limiting to 1000 examples !!!")
+            ds = ds.take(1000)
+        if labels == '<5':
+            ds = ds.filter(lambda obj: obj['label'] < 5)
+        elif labels == '>5':
+            ds = ds.filter(lambda obj: obj['label'] >= 5)
+        else:
+            pass
+        ds = ds.repeat(count=num_epochs)
+        ds = ds.shuffle(shuffle_buffer_size)
+        ds = ds.map(preprocess_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        for batch_size in reversed(batch_dims):
+            ds = ds.batch(batch_size, drop_remainder=True)
+        return ds.prefetch(prefetch_size)
+
+    train_ds = create_dataset(dataset_builder, train_split_name)
+    eval_ds = create_dataset(dataset_builder, eval_split_name)
+    return train_ds, eval_ds, dataset_builder
