@@ -183,16 +183,10 @@ def train(config, workdir, use_wandb=False, wandb_id=None):
         raise ValueError(f"Training diverged at step {step}")
 
       if step % config.train.log_every == 0:
-        current_time = time.time()
-        step_time = current_time - last_time
-        samples_per_second = (config.train.batch_size * config.train.log_every) / step_time
-        last_time = current_time
-
         # 2. Hierarchical Metric Logging
         wandb.log({
           "train/loss": loss.item(),
           "train/step": step,
-          "system/samples_per_second": samples_per_second,
         }, step=step)
 
     if (step % config.train.save_every == 0) and (jax.process_index() == 0):
