@@ -19,7 +19,7 @@ def get_vpsde(config, model, train):
   beta_1 = 20.0
   log_alpha = lambda t: -0.5*t*beta_0-0.25*t**2*(beta_1-beta_0)
   # log_sigma = lambda t: jnp.log(jnp.sqrt(-jnp.expm1(-t*beta_0-0.5*t**2*(beta_1-beta_0))))
-  log_sigma = lambda t: jnp.log(t)
+  log_sigma = lambda t: jnp.log(jnp.sqrt(-jnp.expm1(-t*beta_0-0.5*t**2*(beta_1-beta_0))))
   dlog_alphadt = jax.grad(lambda t: log_alpha(t).sum())
   dlog_sigmadt = jax.grad(lambda t: log_sigma(t).sum())
   # beta_t = s_t d/dt log(s_t/alpha_t)

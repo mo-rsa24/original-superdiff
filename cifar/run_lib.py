@@ -199,7 +199,10 @@ def train(config, workdir, use_wandb=False, wandb_id=None):
       key, *next_keys = random.split(key, num=jax.local_device_count() + 1)
       next_keys = jnp.asarray(next_keys)
       labels = jnp.tile(jnp.arange(10), 10).reshape(jax.local_device_count(),-1)
-      artifacts, num_steps = artifact_generator(next_keys, labels, pstate)
+      eval_state = pstate
+      if getattr(config.eval, "use_ema", False):
+          eval_state = eval_state.replace(model_params=eval_state.params_ema)
+      artifacts, num_steps = artifact_generator(next_keys, labels, eval_state)
       artifacts = artifacts.reshape(-1,
                                     config.data.image_size,
                                     config.data.image_size,

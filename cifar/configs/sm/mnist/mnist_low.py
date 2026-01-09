@@ -55,7 +55,7 @@ def get_config():
     eval.batch_size = 128
     eval.artifact_size = 64
     eval.num_samples = 500
-    eval.use_ema = False
+    eval.use_ema = True
     eval.estimate_bpd = False
 
     return config
