@@ -49,7 +49,11 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 GIT_HASH=$(git rev-parse --short HEAD)
 GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 STAGING_DIR="${STAGING_ROOT}/${JOB_NAME}_${GIT_HASH}_${TIMESTAMP}"
-
+if [[ "$WORKDIR" = /* ]]; then
+  RESOLVED_WORKDIR="$WORKDIR"
+else
+  RESOLVED_WORKDIR="${STAGING_DIR}/${WORKDIR}"
+fi
 # --- 5. Print Submission Banner ---
 header "🚀 Submitting SuperDiff Job: ${JOB_NAME}"
 status_line "SLURM Partition" "${SLURM_PARTITION}"
@@ -58,7 +62,7 @@ status_line "Log Directory"   "logs/${JOB_NAME}"
 rule
 status_line "🐍 Environment"  "${ENV_NAME}"
 status_line "📜 Config"       "${CONFIG}"
-status_line "📂 Workdir"      "${WORKDIR}"
+status_line "📂 Workdir"      "${RESOLVED_WORKDIR}"
 status_line "⚙️ Mode"         "${MODE}"
 status_line "🌿 Branch"       "${GIT_BRANCH}"
 status_line "🔖 Commit"       "${GIT_HASH}"
@@ -92,7 +96,7 @@ JOB_ID=$(sbatch --partition="$SLURM_PARTITION" \
        --export=ALL,ENV_NAME="$ENV_NAME",GIT_COMMIT_SHORT="$GIT_HASH",GIT_BRANCH="$GIT_BRANCH" \
        cifar/run_executor.slurm \
        --config "$CONFIG" \
-       --workdir "$WORKDIR" \
+       --workdir "$RESOLVED_WORKDIR" \
        --mode "$MODE" \
        ${WANDB_ID:+--wandb_id "$WANDB_ID"} \
        $USE_WANDB | awk '{print $4}')
