@@ -32,15 +32,41 @@ class ResBlock(nn.Module):
         h = h + self.to_time(t_emb).view(-1, h.size(1), 1, 1)
         h = self.conv2(F.silu(self.norm2(h)))
         return x + h
+class MultiDilatedBlock(nn.Module):
+    """
+    A lightweight multi-dilation bottleneck that expands the receptive field
+    without resorting to pooling or positional encodings. Parallel dilated
+    branches aggregate evidence across the 48x48 canvas while remaining fully
+    convolutional and translation-equivariant.
+    """
+
+    def __init__(self, c, tdim, dilation_rates=(1, 2, 3)):
+        super().__init__()
+        self.norm = nn.GroupNorm(8, c)
+        self.to_time = nn.Linear(tdim, c)
+        self.branches = nn.ModuleList([
+            nn.Conv2d(c, c, 3, padding=r, dilation=r) for r in dilation_rates
+        ])
+        self.mixer = nn.Conv2d(c * len(dilation_rates), c, 1)
+
+    def forward(self, x, t_emb):
+        h = F.silu(self.norm(x))
+        h = h + self.to_time(t_emb).view(-1, h.size(1), 1, 1)
+        feats = [F.silu(branch(h)) for branch in self.branches]
+        mixed = self.mixer(torch.cat(feats, dim=1))
+        return x + mixed
 
 class FullyConvExpertBigger(nn.Module):
-    def __init__(self, in_ch=1, base=96, tdim=128, n_blocks=6):
+    def __init__(self, in_ch=1, base=96, tdim=128, n_blocks=6,
+                 dilation_rates=(1, 2, 3), post_dilated_blocks=2):
         super().__init__()
         self.time = SinusoidalTimeEmbedding(tdim)
         self.time_mlp = nn.Sequential(nn.Linear(tdim, tdim), nn.SiLU(), nn.Linear(tdim, tdim))
 
         self.in_conv = nn.Conv2d(in_ch, base, 3, padding=1)
+        self.dilated = MultiDilatedBlock(base, tdim, dilation_rates=dilation_rates)
         self.blocks = nn.ModuleList([ResBlock(base, tdim) for _ in range(n_blocks)])
+        self.post_blocks = nn.ModuleList([ResBlock(base, tdim) for _ in range(post_dilated_blocks)])
         self.mid = nn.Conv2d(base, base, 3, padding=1)
         self.out = nn.Conv2d(base, in_ch, 3, padding=1)
 
@@ -48,6 +74,9 @@ class FullyConvExpertBigger(nn.Module):
         t_emb = self.time_mlp(self.time(t))
         h = F.silu(self.in_conv(x))
         for b in self.blocks:
+            h = b(h, t_emb)
+        h = self.dilated(h, t_emb)
+        for b in self.post_blocks:
             h = b(h, t_emb)
         h = F.silu(self.mid(h))
         return self.out(h)

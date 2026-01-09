@@ -135,7 +135,8 @@ def ddim_sample_single(model, schedule, shape, device, steps=50, return_trajecto
     return img
 @torch.no_grad()
 def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
-                          w4=1.0, w7=1.0, normalize_eps=True, seed=0, device='cuda',
+                          w4=1.0, w7=1.0, normalize_eps=True, renormalize_sum=True,
+                          seed=0, device='cuda',
                           return_stats=False):
     """
     DDIM sampler for PoE with optional epsilon statistics for debugging.
@@ -160,15 +161,17 @@ def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
             eps7 = eps7 / (eps7.std(dim=(1,2,3), keepdim=True) + 1e-6)
 
         eps = w4*eps4 + w7*eps7
+        if renormalize_sum:
+            eps = eps / (eps.std(dim=(1, 2, 3), keepdim=True) + 1e-6)
         abar_t = schedule.alpha_bar[t]
         x0 = (x - torch.sqrt(1.0 - abar_t) * eps) / (torch.sqrt(abar_t) + 1e-8)
 
         if return_stats:
             eps_stats.append({
                 "t": t,
-                "eps4_norm": float(eps4.norm(dim=(1,2,3)).mean().item()),
-                "eps7_norm": float(eps7.norm(dim=(1,2,3)).mean().item()),
-                "eps_norm": float(eps.norm(dim=(1,2,3)).mean().item()),
+                "eps4_norm": float(eps4.flatten(1).norm(dim=1).mean().item()),
+                "eps7_norm": float(eps7.flatten(1).norm(dim=1).mean().item()),
+                "eps_norm": float(eps.flatten(1).norm(dim=1).mean().item()),
             })
 
         if i == len(t_seq) - 1:

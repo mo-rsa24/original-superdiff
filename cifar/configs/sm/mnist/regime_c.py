@@ -12,4 +12,6 @@ def get_config():
     # Regime C Constraints
     config.digit_size_range = (18, 22)
     config.min_margin = 4
+    config.p_extra = 0.4
+    config.target_overlap_prob = 0.35
     return config
