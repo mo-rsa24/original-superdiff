@@ -136,7 +136,7 @@ def ddim_sample_single(model, schedule, shape, device, steps=50, return_trajecto
 @torch.no_grad()
 def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
                           w4=1.0, w7=1.0, normalize_eps=True, renormalize_sum=True,
-                          seed=0, device='cuda',
+                          seed=0, device='cuda', per_timestep_norms=None,
                           return_stats=False):
     """
     DDIM sampler for PoE with optional epsilon statistics for debugging.
@@ -156,13 +156,16 @@ def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
 
         eps4 = model4(x, tt)
         eps7 = model7(x, tt)
-        if normalize_eps:
-            eps4 = eps4 / (eps4.std(dim=(1,2,3), keepdim=True) + 1e-6)
-            eps7 = eps7 / (eps7.std(dim=(1,2,3), keepdim=True) + 1e-6)
-
-        eps = w4*eps4 + w7*eps7
-        if renormalize_sum:
-            eps = eps / (eps.std(dim=(1, 2, 3), keepdim=True) + 1e-6)
+        eps, eps4, eps7 = _combine_eps(
+            eps4,
+            eps7,
+            w4=w4,
+            w7=w7,
+            normalize_eps=normalize_eps,
+            renormalize_sum=renormalize_sum,
+            per_timestep_norms=per_timestep_norms,
+            t=t,
+        )
         abar_t = schedule.alpha_bar[t]
         x0 = (x - torch.sqrt(1.0 - abar_t) * eps) / (torch.sqrt(abar_t) + 1e-8)
 
@@ -210,13 +213,14 @@ def _log_tensor_stats(tag, tensor):
         f"{tag}/std": float(tensor.std().item())
     }
 
-def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="expert", log_every=50, sample_every=5000):
+def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="expert",
+                       log_every=50, sample_every=5000, ema_decay=0.999, use_ema=True):
     """
     Training loop with periodic sampling.
     """
     model.train()
     optimizer = optim.Adam(model.parameters(), lr=2e-4)
-    ema = EMA(model, decay=0.999)
+    ema = EMA(model, decay=ema_decay) if use_ema else None
     criterion = nn.MSELoss()
 
     iter_dl = iter(dataloader)
@@ -258,7 +262,8 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
         loss.backward()
 
         optimizer.step()
-        ema.update()
+        if ema is not None:
+            ema.update()
 
         step += 1
 
@@ -289,7 +294,10 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
         if step % sample_every == 0 and step > 0:
             print(f"[{name}] Generating validation samples (Online vs EMA) at step {step}...")
 
-            for m_type, m_obj in [("online", model), ("ema", ema.shadow)]:
+            sample_targets = [("online", model)]
+            if ema is not None:
+                sample_targets.append(("ema", ema.shadow))
+            for m_type, m_obj in sample_targets:
                 m_obj.eval()
                 with torch.no_grad():
                     val_samples = ddim_sample_single(m_obj, schedule, shape=(16, 1, 48, 48), device=device, steps=20)
@@ -301,6 +309,40 @@ def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="exp
             model.train()
 
     return model, ema
+
+def _combine_eps(eps4, eps7, w4, w7, normalize_eps=True, renormalize_sum=True,
+                 per_timestep_norms=None, t=None):
+    if normalize_eps:
+        eps4 = eps4 / (eps4.std(dim=(1, 2, 3), keepdim=True) + 1e-6)
+        eps7 = eps7 / (eps7.std(dim=(1, 2, 3), keepdim=True) + 1e-6)
+    if per_timestep_norms is not None and t is not None:
+        norm4, norm7 = per_timestep_norms.get(int(t), (None, None))
+        if norm4 is not None and norm7 is not None:
+            target = 0.5 * (norm4 + norm7)
+            eps4 = eps4 * (target / (norm4 + 1e-6))
+            eps7 = eps7 * (target / (norm7 + 1e-6))
+    eps = w4 * eps4 + w7 * eps7
+    if renormalize_sum:
+        eps = eps / (eps.std(dim=(1, 2, 3), keepdim=True) + 1e-6)
+    return eps, eps4, eps7
+
+
+@torch.no_grad()
+def compute_eps_norm_stats(model4, model7, schedule, steps, batch, device):
+    model4.eval()
+    model7.eval()
+    shape = (batch, 1, 48, 48)
+    x = torch.randn(shape, device=device)
+    t_seq = torch.linspace(schedule.cfg.T - 1, 0, steps, device=device).long()
+    norms = {}
+    for t in t_seq:
+        tt = torch.full((batch,), t.item(), device=device, dtype=torch.long)
+        eps4 = model4(x, tt)
+        eps7 = model7(x, tt)
+        norm4 = float(eps4.flatten(1).norm(dim=1).mean().item())
+        norm7 = float(eps7.flatten(1).norm(dim=1).mean().item())
+        norms[int(t.item())] = (norm4, norm7)
+    return norms
 
 def describe_schedule(schedule: DiffusionSchedule):
     stats = {
@@ -332,7 +374,19 @@ def main(argv):
     tfm = transforms.Compose([transforms.ToTensor()])
     mnist_train = datasets.MNIST(root="./data", train=True, download=True, transform=tfm)
     cfg = FLAGS.config
-    schedule = DiffusionSchedule(DiffusionConfig(T=500), device=device)
+    schedule_cfg = DiffusionConfig(
+        T=cfg.get("diffusion_T", 500),
+        beta_start=cfg.get("beta_start", 1e-4),
+        beta_end=cfg.get("beta_end", 0.02),
+        prediction_type=cfg.get("prediction_type", "eps"),
+    )
+    if schedule_cfg.prediction_type != "eps":
+        raise ValueError(f"Unsupported prediction_type {schedule_cfg.prediction_type}; PoE expects eps models.")
+    schedule = DiffusionSchedule(schedule_cfg, device=device)
+    schedule_stats = describe_schedule(schedule)
+    print(f"Diffusion schedule: {schedule_stats}")
+    if wandb.run is not None:
+        wandb.log({f"schedule/{k}": v for k, v in schedule_stats.items()}, step=0)
 
     # -- Dataset Setup --
     if cfg.regime == "A":
@@ -405,14 +459,38 @@ def main(argv):
 
     if FLAGS.mode == "train":
         print(f"Training Regime {cfg.regime} (Expert 4)...")
-        m4, ema4 = train_expert_wandb(model4, dl4, schedule, device, max_steps=cfg.train_steps, name="expert4",
-                                      sample_every=FLAGS.sample_every)
-        torch.save(ema4.shadow.state_dict(), os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_expert4.pth"))
+        m4, ema4 = train_expert_wandb(
+            model4,
+            dl4,
+            schedule,
+            device,
+            max_steps=cfg.train_steps,
+            name="expert4",
+            sample_every=FLAGS.sample_every,
+            ema_decay=cfg.get("ema_decay", 0.999),
+            use_ema=cfg.get("use_ema", True),
+        )
+        if ema4 is not None:
+            torch.save(ema4.shadow.state_dict(), os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_expert4.pth"))
+        else:
+            torch.save(m4.state_dict(), os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_expert4.pth"))
 
         print(f"Training Regime {cfg.regime} (Expert 7)...")
-        m7, ema7 = train_expert_wandb(model7, dl7, schedule, device, max_steps=cfg.train_steps, name="expert7",
-                                      sample_every=FLAGS.sample_every)
-        torch.save(ema7.shadow.state_dict(), os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_expert7.pth"))
+        m7, ema7 = train_expert_wandb(
+            model7,
+            dl7,
+            schedule,
+            device,
+            max_steps=cfg.train_steps,
+            name="expert7",
+            sample_every=FLAGS.sample_every,
+            ema_decay=cfg.get("ema_decay", 0.999),
+            use_ema=cfg.get("use_ema", True),
+        )
+        if ema7 is not None:
+            torch.save(ema7.shadow.state_dict(), os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_expert7.pth"))
+        else:
+            torch.save(m7.state_dict(), os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_expert7.pth"))
 
         if FLAGS.use_wandb:
             wandb.save(os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_expert4.pth"))
@@ -424,8 +502,8 @@ def main(argv):
             model4.load_state_dict(torch.load(os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_expert4.pth")))
             model7.load_state_dict(torch.load(os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_expert7.pth")))
         else:
-            model4 = ema4.shadow
-            model7 = ema7.shadow
+            model4 = ema4.shadow if ema4 is not None else m4
+            model7 = ema7.shadow if ema7 is not None else m7
 
         print("Training Evaluation Classifier...")
         clf = train_mnist_classifier(mnist_train, device)
@@ -435,31 +513,73 @@ def main(argv):
             {"normalize_eps": True, "tag": "norm_eps"},
             {"normalize_eps": False, "tag": "raw_eps"},
         ]
+        poe_steps = cfg.get("poe_steps", 100)
+        eval_batches = cfg.get("eval_batches", 4)
+        eval_batch_size = cfg.get("eval_batch_size", 64)
+        norm_batch = cfg.get("per_timestep_norm_batch", 32)
+        match_norms = cfg.get("match_norm_per_timestep", False)
 
+        per_timestep_norms = None
+        if match_norms:
+            print("Computing per-timestep epsilon norm stats for calibration...")
+            per_timestep_norms = compute_eps_norm_stats(model4, model7, schedule, poe_steps, norm_batch, device)
+
+        weight_sweep = cfg.get("weight_sweep", [(1.0, 1.0)])
         for variant in poe_variants:
-            x_poe, eps_stats = ddim_sample_poe_debug(
+            best = None
+            best_tag = None
+            best_weights = None
+            for (w4, w7) in weight_sweep:
+                all_metrics = []
+                for _ in range(eval_batches):
+                    x_poe, eps_stats = ddim_sample_poe_debug(
+                        model4, model7, schedule,
+                        shape=(eval_batch_size, 1, 48, 48),
+                        steps=poe_steps,
+                        device=device,
+                        normalize_eps=variant["normalize_eps"],
+                        return_stats=True,
+                        w4=w4,
+                        w7=w7,
+                        per_timestep_norms=per_timestep_norms,
+                    )
+                    metrics = eval_existential(x_poe, clf, device)
+                    all_metrics.append(metrics)
+
+                mean_metrics = {
+                    k: float(sum(m[k] for m in all_metrics) / len(all_metrics))
+                    for k in all_metrics[0].keys()
+                }
+                score = mean_metrics["mean_exists_both_proxy"]
+                variant_tag = f"{variant['tag']}_w4_{w4}_w7_{w7}"
+                print(f"Regime {cfg.regime} Results ({variant_tag}):", mean_metrics)
+
+                if FLAGS.use_wandb:
+                    wandb.log({f"eval/{variant_tag}/{k}": v for k, v in mean_metrics.items()})
+                    if eps_stats:
+                        wandb.log({f"eval/{variant_tag}/eps_stats": eps_stats})
+
+                if best is None or score > best["score"]:
+                    best = {"score": score, "metrics": mean_metrics}
+                    best_tag = variant_tag
+                    best_weights = (w4, w7)
+
+            best_w4, best_w7 = best_weights if best_weights is not None else weight_sweep[0]
+            x_poe, _ = ddim_sample_poe_debug(
                 model4, model7, schedule,
                 shape=(64, 1, 48, 48),
-                steps=100,
+                steps=poe_steps,
                 device=device,
                 normalize_eps=variant["normalize_eps"],
-                return_stats=True,
+                return_stats=False,
+                w4=best_w4,
+                w7=best_w7,
+                per_timestep_norms=per_timestep_norms,
             )
 
-            variant_tag = variant["tag"]
-            img_path = os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_poe_final_{variant_tag}.png")
-            save_images_grid(x_poe, f"Regime {cfg.regime} Final PoE ({variant_tag})", img_path,
+            img_path = os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_poe_final_{best_tag}.png")
+            save_images_grid(x_poe, f"Regime {cfg.regime} Final PoE ({best_tag})", img_path,
                              log_wandb=FLAGS.use_wandb, step=cfg.train_steps)
-
-            metrics = eval_existential(x_poe, clf, device)
-            print(f"Regime {cfg.regime} Results ({variant_tag}):", metrics)
-
-            if FLAGS.use_wandb:
-                wandb.log({f"eval/{variant_tag}/{k}": v for k, v in metrics.items()})
-                # Log eps norms over time for balance diagnostics
-                if eps_stats:
-                    wandb.log({f"eval/{variant_tag}/eps_stats": eps_stats})
-
 
 if __name__ == "__main__":
     app.run(main)

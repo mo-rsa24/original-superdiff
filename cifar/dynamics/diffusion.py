@@ -7,6 +7,7 @@ class DiffusionConfig:
     T: int = 500
     beta_start: float = 1e-4
     beta_end: float = 0.02
+    prediction_type: str = "eps"
 
 class DiffusionSchedule:
     def __init__(self, cfg: DiffusionConfig, device):

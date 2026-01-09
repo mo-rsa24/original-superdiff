@@ -42,8 +42,15 @@ def existence_scores_48(x48, clf, digit: int, device):
 def eval_existential(x, clf, device):
     s4 = existence_scores_48(x, clf, 4, device).detach().cpu().numpy()
     s7 = existence_scores_48(x, clf, 7, device).detach().cpu().numpy()
+    other_digits = [d for d in range(10) if d not in (4, 7)]
+    other_scores = []
+    for d in other_digits:
+        other_scores.append(existence_scores_48(x, clf, d, device).detach().cpu().numpy())
+    max_other = np.max(np.stack(other_scores, axis=0), axis=0)
     return {
         "mean_exists4": float(s4.mean()),
         "mean_exists7": float(s7.mean()),
-        "mean_exists_both_proxy": float(np.minimum(s4, s7).mean())
+        "mean_exists_both_proxy": float(np.minimum(s4, s7).mean()),
+        "mean_exists_other_max": float(max_other.mean()),
+        "mean_exclusivity": float((1.0 - max_other).mean()),
     }
