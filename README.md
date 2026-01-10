@@ -14,6 +14,8 @@ The principled method for efficiently combining multiple pre-trained diffusion m
 
 </details>
 
+## RQ 1
+RQ 1
 ## Install dependencies
 
 For Stable Diffusion examples, see [Installing Dependencies for CIFAR and SD](/applications/images/README.md)
