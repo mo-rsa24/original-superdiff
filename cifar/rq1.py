@@ -487,8 +487,6 @@ def main(argv):
     if wandb.run is not None:
         wandb.log({f"schedule/{k}": v for k, v in schedule_stats.items()}, step=0)
 
-    if cfg.regime == "C":
-        cfg.target_overlap_digit = cfg.get("target_overlap_digit", None)
     ds4 = build_expert_dataset(cfg, mnist_train, 4, cfg.regime)
     ds7 = build_expert_dataset(cfg, mnist_train, 7, cfg.regime)
 
