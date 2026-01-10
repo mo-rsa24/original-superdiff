@@ -93,7 +93,6 @@ JOB_ID=$(sbatch --partition="$SLURM_PARTITION" \
        --config "$CONFIG" \
        --workdir "$WORKDIR" \
        --mode train \
-       --wandb_project "$WANDB_PROJECT" \
        --sample_every 10000 | awk '{print $4}')
 
 status_line "🎉 Submitted" "Job ID: $JOB_ID"
