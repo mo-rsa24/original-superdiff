@@ -54,3 +54,21 @@ def eval_existential(x, clf, device):
         "mean_exists_other_max": float(max_other.mean()),
         "mean_exclusivity": float((1.0 - max_other).mean()),
     }
+
+@torch.no_grad()
+def eval_only_digits(x, clf, device, target_digits=(4, 7)):
+    target_digits = set(int(d) for d in target_digits)
+    scores = {d: existence_scores_48(x, clf, d, device) for d in target_digits}
+    s_target = torch.stack([scores[d] for d in sorted(target_digits)], dim=1)
+    s4 = scores.get(4, torch.zeros_like(s_target[:, 0]))
+    s7 = scores.get(7, torch.zeros_like(s_target[:, 0]))
+    other_digits = [d for d in range(10) if d not in target_digits]
+    other_scores = torch.stack([existence_scores_48(x, clf, d, device) for d in other_digits], dim=1)
+    max_other = other_scores.max(dim=1).values
+    return {
+        "mean_exists4": float(s4.mean().item()),
+        "mean_exists7": float(s7.mean().item()),
+        "mean_exists_both_proxy": float(torch.minimum(s4, s7).mean().item()),
+        "mean_max_other_digit": float(max_other.mean().item()),
+        "mean_only_47_proxy": float((1.0 - max_other).mean().item()),
+    }

@@ -94,10 +94,13 @@ class TwoDigitMNISTCanvasClean(Dataset):
 
     def _choose_digits_and_labels(self):
         y = {"has4": torch.tensor(0.0), "has7": torch.tensor(0.0)}
-        if self.mode == "exists4":
-            digits = [4]; y["has4"] = torch.tensor(1.0)
-        elif self.mode == "exists7":
-            digits = [7]; y["has7"] = torch.tensor(1.0)
+        if self.mode.startswith("exists"):
+            digit = int(self.mode.replace("exists", ""))
+            digits = [digit]
+            if digit == 4:
+                y["has4"] = torch.tensor(1.0)
+            elif digit == 7:
+                y["has7"] = torch.tensor(1.0)
         elif self.mode == "both47":
             digits = [4, 7]; y["has4"] = torch.tensor(1.0); y["has7"] = torch.tensor(1.0)
         elif self.mode == "mixed":
