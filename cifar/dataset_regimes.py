@@ -5,6 +5,70 @@ import torchvision.transforms.functional as TF
 import numpy as np
 from collections import Counter
 
+# ---------- colorized MNIST helpers ----------
+COLOR_PALETTE = {
+    "red": (1.0, 0.0, 0.0),
+    "green": (0.0, 1.0, 0.0),
+    "blue": (0.0, 0.0, 1.0),
+    "yellow": (1.0, 1.0, 0.0),
+    "cyan": (0.0, 1.0, 1.0),
+    "magenta": (1.0, 0.0, 1.0),
+}
+
+def resolve_palette_color(name):
+    if name not in COLOR_PALETTE:
+        raise ValueError(f"Unknown color '{name}'. Available: {list(COLOR_PALETTE.keys())}")
+    return torch.tensor(COLOR_PALETTE[name], dtype=torch.float32).view(3, 1, 1)
+
+class ColoredMNISTAttributes(Dataset):
+    """
+    Colorized MNIST dataset for attribute-factorized experts.
+    - mode="shape": fixed digit, random color (shape expert).
+    - mode="color": fixed color, random digit (color expert).
+    - mode="joint": fixed digit and fixed color (for eval/visualization).
+    """
+    def __init__(self, mnist_base, mode="shape", target_digit=7, target_color="blue",
+                 palette=None, color_jitter=0.0, seed=0):
+        super().__init__()
+        self.mnist = mnist_base
+        self.mode = mode
+        self.target_digit = int(target_digit)
+        self.target_color = target_color
+        self.palette = palette if palette is not None else list(COLOR_PALETTE.keys())
+        self.color_jitter = float(color_jitter)
+        self.base_seed = int(seed)
+        self.rng = np.random.RandomState(self.base_seed)
+        self.color_to_id = {c: i for i, c in enumerate(self.palette)}
+
+        if self.mode in {"shape", "joint"}:
+            self.indices = [i for i, (_, y) in enumerate(self.mnist) if int(y) == self.target_digit]
+        else:
+            self.indices = list(range(len(self.mnist)))
+
+    def __len__(self):
+        return len(self.indices)
+
+    def _sample_color_name(self):
+        if self.mode == "shape":
+            return self.rng.choice(self.palette)
+        return self.target_color
+
+    def _apply_color(self, glyph, color_name):
+        color = resolve_palette_color(color_name)
+        if self.color_jitter > 0:
+            jitter = self.rng.uniform(1.0 - self.color_jitter, 1.0 + self.color_jitter)
+            color = torch.clamp(color * jitter, 0.0, 1.0)
+        return torch.clamp(glyph.repeat(3, 1, 1) * color, 0.0, 1.0)
+
+    def __getitem__(self, idx):
+        base_idx = self.indices[idx]
+        x, y = self.mnist[base_idx]
+        color_name = self._sample_color_name()
+        x_colored = self._apply_color(x, color_name)
+        x_colored = x_colored * 2.0 - 1.0
+        label = {"digit": int(y), "color": self.color_to_id.get(color_name, -1)}
+        return x_colored, label
+
 # ---------- helpers: ink masks + dilation ----------
 def binarize_ink(glyph, thr=0.20, relative=True):
     g = glyph[0]
