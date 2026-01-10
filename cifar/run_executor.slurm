@@ -23,8 +23,8 @@ export TF_FORCE_GPU_ALLOW_GROWTH=true
 export PYTHONPATH="${PWD}:${PYTHONPATH:-}"
 echo "PYTHONPATH set to: $PYTHONPATH"
 
-# --- 3. Run rq1.py ---
+# --- 3. Run rq2.py ---
 # All arguments passed from sbatch (in launch_train.sh) are caught by "$@"
-echo "Executing: python -u rq1.py $@"
+echo "Executing: python -u rq2.py $@"
 echo "Commit: ${GIT_COMMIT_SHORT:-unknown} | Branch: ${GIT_BRANCH:-unknown} | W&B Name: ${WANDB_NAME:-unset}"
-srun python3 -u cifar/rq1.py "$@"
+srun python3 -u cifar/rq2.py "$@"

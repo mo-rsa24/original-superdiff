@@ -30,12 +30,12 @@ GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
 export CONFIG="${CONFIG:-cifar/configs/sm/mnist/regime_${REGIME_LOWER}.py}"
 export WORKDIR="${WORKDIR:-cifar/runs/regime_${REGIME}}"
-export WANDB_PROJECT="${WANDB_PROJECT:-ebm-rq1-run-3}"
+export WANDB_PROJECT="${WANDB_PROJECT:-ebm-rq2-run-3}"
 export WANDB_NAME="${WANDB_NAME:-${REGIME}-${GIT_BRANCH}-${GIT_HASH}-${TIMESTAMP}}"
 export WANDB_TAGS="${WANDB_TAGS:-regime_${REGIME},${GIT_BRANCH},${GIT_HASH}}"
 export WANDB_RUN_GROUP="${WANDB_RUN_GROUP:-regime_${REGIME}}"
 
-JOB_NAME="rq1-regime-${REGIME}-${GIT_HASH}"
+JOB_NAME="rq2-regime-${REGIME}-${GIT_HASH}"
 STAGING_DIR="${STAGING_ROOT}/${JOB_NAME}_${TIMESTAMP}"
 
 # --- 3. Parse Command Line Overrides (Optional) ---
