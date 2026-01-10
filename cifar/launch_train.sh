@@ -99,7 +99,7 @@ JOB_ID=$(sbatch --partition="$SLURM_PARTITION" \
 status_line "🎉 Submitted" "Job ID: $JOB_ID"
 status_line "📝 Logs at" "${REPO_ROOT}/logs/${JOB_NAME}-${JOB_ID}.out"
 
-# Record experiment provenance locally
+# Record experiment provenance locallys
 mkdir -p "${REPO_ROOT}/logs"
 {
   echo "- ${TIMESTAMP} | job: ${JOB_NAME} | id: ${JOB_ID} | branch: ${GIT_BRANCH} | commit: ${GIT_HASH} | wandb_name: ${WANDB_NAME} | wandb_project: ${WANDB_PROJECT} | workdir: ${WORKDIR}"
