@@ -29,6 +29,10 @@ from models import utils as mutils
 from dynamics import get_vpsde, get_joint_vf, get_joint_stoch_vf, get_avg_vf
 from models import ddpm
 
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+import tensorflow as tf
+tf.config.set_visible_devices([], "GPU")
 
 def init_wandb(config, workdir, wandb_id=None):
   """Initialize W&B with infrastructure awareness and version control."""
@@ -244,7 +248,7 @@ def evaluate_fid(config, workdir, eval_folder, stoch):
   artifact_generator = jax.vmap(artifact_generator, axis_name='batch')
   inverse_scaler = datasets.get_image_inverse_scaler(config)
   artifact_shape = [config.eval.batch_size, 
-                    config.data.image_size, 
+                    config.data.image_size,
                     config.data.image_size, 
                     config.data.num_channels]
 
