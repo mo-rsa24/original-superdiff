@@ -144,7 +144,7 @@ def train(config, workdir, use_wandb=False, wandb_id=None):
   if jax.process_index() == 0 and use_wandb:
     wid = wandb_id if wandb_id is not None else (str(state.wandbid) if hasattr(state, 'wandbid') else None)
     init_wandb(config, workdir, wandb_id=wid)
-  
+
   # init functions
   q_t, loss_fn, vector_field = get_vpsde(config, model, train=True)
   step_fn = tutils.get_step_fn(optimizer, loss_fn)
@@ -179,14 +179,15 @@ def train(config, workdir, use_wandb=False, wandb_id=None):
 
     if jax.process_index() == 0:
       if np.isnan(loss):
-        wandb.alert(
-          title="NaN Loss Detected",
-          text=f"Run crashed at step {step}. Loss is NaN.",
-          level=wandb.AlertLevel.ERROR
-        )
+          if use_wandb:
+              wandb.alert(
+                  title="NaN Loss Detected",
+                  text=f"Run crashed at step {step}. Loss is NaN.",
+                  level=wandb.AlertLevel.ERROR
+              )
         raise ValueError(f"Training diverged at step {step}")
 
-      if step % config.train.log_every == 0:
+      if use_wandb and step % config.train.log_every == 0:
         # 2. Hierarchical Metric Logging
         wandb.log({
           "train/loss": loss.item(),
@@ -212,7 +213,7 @@ def train(config, workdir, use_wandb=False, wandb_id=None):
                                     config.data.image_size,
                                     config.data.num_channels)[:config.eval.artifact_size]
       artifacts = inverse_scaler(artifacts)
-      if jax.process_index() == 0:
+      if jax.process_index() == 0 and use_wandb:
         # 6. Log Visuals
         images = tutils.stack_imgs(artifacts)
         wandb.log({
@@ -232,7 +233,7 @@ def evaluate_fid(config, workdir, eval_folder, stoch):
 
   # init model
   state, ckpt_mgr, optimizer, model = init_model(key, config, workdir)
-  
+
   eval_dir = os.path.join(workdir, eval_folder)
   tf.io.gfile.makedirs(eval_dir)
   if stoch:
@@ -247,9 +248,9 @@ def evaluate_fid(config, workdir, eval_folder, stoch):
   artifact_generator = eutils.get_generator([model], config, jax.jit(vector_field))
   artifact_generator = jax.vmap(artifact_generator, axis_name='batch')
   inverse_scaler = datasets.get_image_inverse_scaler(config)
-  artifact_shape = [config.eval.batch_size, 
+  artifact_shape = [config.eval.batch_size,
                     config.data.image_size,
-                    config.data.image_size, 
+                    config.data.image_size,
                     config.data.num_channels]
 
   # init inception
@@ -278,7 +279,7 @@ def evaluate_fid(config, workdir, eval_folder, stoch):
       io_buffer = io.BytesIO()
       np.savez_compressed(io_buffer, pool_3=latents)
       fout.write(io_buffer.getvalue())
-  
+
   all_pools = []
   stats = tf.io.gfile.glob(os.path.join(sample_dir, "statistics_*.npz"))
   for stat_file in stats:
@@ -292,7 +293,7 @@ def evaluate_fid(config, workdir, eval_folder, stoch):
   test_pools = evaluation.load_dataset_stats(config, eval=True)
   test_fid = evaluation.fid(test_pools["pool_3"], all_pools)
   print(f'train FID: {train_fid}, test FID: {test_fid}', flush=True)
-  
+
   with tf.io.gfile.GFile(os.path.join(eval_dir, f"report.npz"), "wb") as f:
     io_buffer = io.BytesIO()
     np.savez_compressed(io_buffer, train_fid=train_fid, test_fid=test_fid)
@@ -309,7 +310,7 @@ def evaluate_joint_fid(config, workdir, eval_folder, checkpoints, stoch):
     state, _, _, model = init_model(key, config, chkpt)
     states.append(state)
     models.append(model)
-  
+
   eval_dir = os.path.join(workdir, eval_folder)
   tf.io.gfile.makedirs(eval_dir)
   if stoch:
@@ -327,9 +328,9 @@ def evaluate_joint_fid(config, workdir, eval_folder, checkpoints, stoch):
   artifact_generator = eutils.get_generator(models, config, vector_field)
   artifact_generator = jax.vmap(artifact_generator, axis_name='batch')
   inverse_scaler = datasets.get_image_inverse_scaler(config)
-  artifact_shape = [config.eval.batch_size, 
-                    config.data.image_size, 
-                    config.data.image_size, 
+  artifact_shape = [config.eval.batch_size,
+                    config.data.image_size,
+                    config.data.image_size,
                     config.data.num_channels]
 
   # init inception
@@ -358,7 +359,7 @@ def evaluate_joint_fid(config, workdir, eval_folder, checkpoints, stoch):
       io_buffer = io.BytesIO()
       np.savez_compressed(io_buffer, pool_3=latents)
       fout.write(io_buffer.getvalue())
-  
+
   all_pools = []
   stats = tf.io.gfile.glob(os.path.join(sample_dir, "statistics_*.npz"))
   for stat_file in stats:
@@ -372,7 +373,7 @@ def evaluate_joint_fid(config, workdir, eval_folder, checkpoints, stoch):
   test_pools = evaluation.load_dataset_stats(config, eval=True)
   test_fid = evaluation.fid(test_pools["pool_3"], all_pools)
   print(f'train FID: {train_fid}, test FID: {test_fid}', flush=True)
-  
+
   with tf.io.gfile.GFile(os.path.join(eval_dir, f"report.npz"), "wb") as f:
     io_buffer = io.BytesIO()
     np.savez_compressed(io_buffer, train_fid=train_fid, test_fid=test_fid)
