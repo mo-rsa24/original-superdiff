@@ -134,3 +134,27 @@ class SmallMNISTClassifier(nn.Module):
 
     def forward(self, x):
         return self.net(x)
+
+class CountConstraintNet(nn.Module):
+    """
+    Predicts counts for digits {4,7,other} from a 48x48 canvas.
+    Used as a learned constraint model during PoE sampling.
+    """
+    def __init__(self):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1), nn.SiLU(),
+            nn.MaxPool2d(2),  # 24x24
+            nn.Conv2d(32, 64, 3, padding=1), nn.SiLU(),
+            nn.MaxPool2d(2),  # 12x12
+            nn.Conv2d(64, 128, 3, padding=1), nn.SiLU(),
+            nn.AdaptiveAvgPool2d(1),
+        )
+        self.head = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(128, 128), nn.SiLU(),
+            nn.Linear(128, 3),
+        )
+
+    def forward(self, x):
+        return self.head(self.features(x))

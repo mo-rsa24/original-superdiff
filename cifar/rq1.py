@@ -16,7 +16,7 @@ from absl import app, flags
 from cifar.dynamics.diffusion import DiffusionSchedule, DiffusionConfig, ddim_sample_poe
 from cifar.dataset_regimes import filter_digit_subset, PadTo48, TwoDigitMNISTCanvasClean, TwoDigitMNISTCanvasCleanPlus, \
     worker_init_fn,  summarize_digit_support
-from cifar.models.experts import CenterBiasedExpert, FullyConvExpertBigger
+from cifar.models.experts import CenterBiasedExpert, FullyConvExpertBigger, CountConstraintNet
 from cifar.regime_evaluation import train_mnist_classifier, eval_existential, eval_only_digits
 
 FLAGS = flags.FLAGS
@@ -138,7 +138,8 @@ def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
                           w4=1.0, w7=1.0, normalize_eps=True, renormalize_sum=True,
                           match_eps_norms=False, anti_experts=None, anti_weight=1.0,
                           seed=0, device='cuda', per_timestep_norms=None,
-                          return_stats=False):
+                          return_stats=False, constraint_model=None,
+                          constraint_weight=0.0, target_counts=None):
     """
     DDIM sampler for PoE with optional epsilon statistics for debugging.
     Returns samples and (optionally) a dict of eps norms per expert and step.
@@ -153,6 +154,10 @@ def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
     t_seq = torch.linspace(T-1, 0, steps, device=device).long()
 
     eps_stats = [] if return_stats else None
+    if constraint_model is not None:
+        constraint_model.eval()
+    if target_counts is None:
+        target_counts = (1.0, 1.0, 0.0)
 
     for i in range(len(t_seq)):
         t = t_seq[i].item()
@@ -160,6 +165,12 @@ def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
 
         eps4 = model4(x, tt)
         eps7 = model7(x, tt)
+        with torch.no_grad():
+            eps4 = model4(x, tt)
+            eps7 = model7(x, tt)
+            eps_anti = None
+            if anti_experts:
+                eps_anti = [model(x, tt) for model in anti_experts.values()]
         if normalize_eps:
             eps4 = eps4 / (eps4.std(dim=(1,2,3), keepdim=True) + 1e-6)
             eps7 = eps7 / (eps7.std(dim=(1,2,3), keepdim=True) + 1e-6)
@@ -183,7 +194,14 @@ def ddim_sample_poe_debug(model4, model7, schedule, shape, steps=100, eta=0.0,
             eps = eps / (eps.std(dim=(1, 2, 3), keepdim=True) + 1e-6)
         abar_t = schedule.alpha_bar[t]
         x0 = (x - torch.sqrt(1.0 - abar_t) * eps) / (torch.sqrt(abar_t) + 1e-8)
-
+        if constraint_model is not None and constraint_weight > 0:
+            with torch.enable_grad():
+                x0_req = x0.detach().requires_grad_(True)
+                preds = constraint_model(x0_req)
+                target = torch.tensor(target_counts, device=x0_req.device).view(1, 3).repeat(x0_req.size(0), 1)
+                loss = torch.mean((preds - target) ** 2)
+                grad = torch.autograd.grad(loss, x0_req)[0]
+                x0 = (x0_req - constraint_weight * grad).detach()
         if return_stats:
             eps_stats.append({
                 "t": t,
@@ -229,6 +247,22 @@ def _log_tensor_stats(tag, tensor):
         f"{tag}/mean": float(tensor.mean().item()),
         f"{tag}/std": float(tensor.std().item())
     }
+
+def train_count_constraint(model, dataloader, device, epochs=3, lr=1e-3):
+    model.train()
+    opt = optim.Adam(model.parameters(), lr=lr)
+    loss_fn = nn.MSELoss()
+    for ep in range(epochs):
+        for x, y in dataloader:
+            x = x.to(device)
+            targets = torch.stack([y["count4"], y["count7"], y["count_other"]], dim=1).to(device)
+            preds = model(x)
+            loss = loss_fn(preds, targets)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+        print(f"count constraint epoch {ep+1}/{epochs} done")
+    return model
 
 def train_expert_wandb(model, dataloader, schedule, device, max_steps, name="expert",
                        log_every=50, sample_every=5000, ema_decay=0.999, use_ema=True):
@@ -403,6 +437,18 @@ def build_expert_dataset(cfg, mnist_train, digit, regime):
         )
     raise ValueError(f"Unknown regime {regime}")
 
+def build_constraint_dataset(cfg, mnist_train):
+    return TwoDigitMNISTCanvasCleanPlus(
+        mnist_train,
+        mode=cfg.get("constraint_mode", "mixed"),
+        digit_size_range=cfg.digit_size_range,
+        min_margin=cfg.min_margin,
+        p_extra=cfg.get("constraint_p_extra", cfg.get("p_extra", 0.3)),
+        target_overlap_prob=cfg.get("target_overlap_prob", 0.0),
+        return_counts=True,
+    )
+
+
 def load_expert_checkpoint(model, workdir, regime, digit):
     ckpt = os.path.join(workdir, f"regime_{regime}_expert{digit}.pth")
     if os.path.exists(ckpt):
@@ -456,6 +502,17 @@ def main(argv):
                      pin_memory=True)
     dl7 = DataLoader(ds7, batch_size=cfg.batch_size if 'batch_size' in cfg else 128, shuffle=True, num_workers=2,
                      pin_memory=True)
+    constraint_model = None
+    constraint_use = cfg.get("use_count_constraint", False)
+    if constraint_use:
+        constraint_ds = build_constraint_dataset(cfg, mnist_train)
+        constraint_dl = DataLoader(
+            constraint_ds,
+            batch_size=cfg.get("constraint_batch_size", cfg.batch_size if 'batch_size' in cfg else 128),
+            shuffle=True,
+            num_workers=2,
+            pin_memory=True,
+        )
     anti_expert_digits = [int(d) for d in cfg.get("anti_expert_digits", [])]
     anti_dataloaders = {}
     if anti_expert_digits:
@@ -499,6 +556,8 @@ def main(argv):
             for digit in anti_expert_digits
         }
         anti_emas = {}
+    if constraint_use:
+        constraint_model = CountConstraintNet().to(device)
 
     if FLAGS.mode == "train":
         print(f"Training Regime {cfg.regime} (Expert 4)...")
@@ -533,7 +592,21 @@ def main(argv):
             wandb.save(os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_expert7.pth"))
             for digit in anti_expert_digits:
                 wandb.save(os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_expert{digit}.pth"))
-
+        if constraint_use:
+            print("Training count constraint model...")
+            constraint_model = train_count_constraint(
+                constraint_model,
+                constraint_dl,
+                device,
+                epochs=cfg.get("constraint_epochs", 3),
+                lr=cfg.get("constraint_lr", 1e-3),
+            )
+            torch.save(
+                constraint_model.state_dict(),
+                os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_count_constraint.pth"),
+            )
+            if FLAGS.use_wandb:
+                wandb.save(os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_count_constraint.pth"))
     if FLAGS.mode == "eval" or FLAGS.mode == "train":
         if FLAGS.mode == "eval":
             print("Loading checkpoints...")
@@ -549,12 +622,21 @@ def main(argv):
                     missing_digits.append(digit)
             for digit in missing_digits:
                 anti_models.pop(digit, None)
+            if constraint_use:
+                constraint_ckpt = os.path.join(FLAGS.workdir, f"regime_{cfg.regime}_count_constraint.pth")
+                if os.path.exists(constraint_ckpt):
+                    constraint_model.load_state_dict(torch.load(constraint_ckpt))
+                else:
+                    print("Count constraint checkpoint missing; disabling constraint guidance.")
+                    constraint_use = False
         else:
             model4 = ema4.shadow if ema4 is not None else m4
             model7 = ema7.shadow if ema7 is not None else m7
             anti_models = {digit: ema.shadow for digit, ema in anti_emas.items()}
             if anti_models:
                 print(f"Using EMA anti-experts: {list(anti_models.keys())}")
+            if constraint_use and constraint_model is not None:
+                constraint_model.eval()
 
         print("Training Evaluation Classifier...")
         clf = train_mnist_classifier(mnist_train, device)
@@ -589,6 +671,9 @@ def main(argv):
                         return_stats=True,
                         w4=w4,
                         w7=w7,
+                        constraint_model=constraint_model if constraint_use else None,
+                        constraint_weight=cfg.get("constraint_weight", 0.0),
+                        target_counts=cfg.get("constraint_target_counts", (1.0, 1.0, 0.0)),
                     )
 
                     variant_tag = f"{variant['tag']}_w4{w4}_w7{w7}_s{seed}"

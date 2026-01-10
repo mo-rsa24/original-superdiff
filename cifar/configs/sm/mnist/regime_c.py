@@ -26,4 +26,9 @@ def get_config():
     config.anti_weight = 0.7
     config.weight_sweep = [(0.75, 1.25), (1.0, 1.0), (1.25, 0.75)]
     config.eval_seeds = [0, 1]
+    config.use_count_constraint = True
+    config.constraint_weight = 0.15
+    config.constraint_epochs = 3
+    config.constraint_lr = 1e-3
+    config.constraint_target_counts = (1.0, 1.0, 0.0)
     return config

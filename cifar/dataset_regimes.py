@@ -38,7 +38,8 @@ class TwoDigitMNISTCanvasClean(Dataset):
     def __init__(self, mnist_base, length=60000, canvas_size=48, mode="mixed",
                  p_both=0.8, digit_size_range=(18, 22), min_margin=4, min_gap=10,
                  ink_thr=0.20, ink_thr_relative=True, enforce_side_by_side=False,
-                 corridor_gap=4, max_tries=1500, max_restarts=50, antialias_resize=True, seed=0):
+                 corridor_gap=4, max_tries=1500, max_restarts=50, antialias_resize=True, seed=0,
+                 return_counts=False):
         super().__init__()
         self.mnist = mnist_base
         self.length = int(length)
@@ -57,6 +58,7 @@ class TwoDigitMNISTCanvasClean(Dataset):
         self.antialias_resize = bool(antialias_resize)
         self.base_seed = int(seed)
         self.rng = np.random.RandomState(self.base_seed)
+        self.return_counts = bool(return_counts)
 
         self.by_digit = {d: [] for d in range(10)}
         for i in range(len(self.mnist)):
@@ -115,6 +117,17 @@ class TwoDigitMNISTCanvasClean(Dataset):
             raise ValueError(f"Unknown mode: {self.mode}")
         return digits, y
 
+    @staticmethod
+    def _count_digits(digits):
+        count4 = sum(1 for d in digits if d == 4)
+        count7 = sum(1 for d in digits if d == 7)
+        count_other = len(digits) - count4 - count7
+        return {
+            "count4": torch.tensor(float(count4)),
+            "count7": torch.tensor(float(count7)),
+            "count_other": torch.tensor(float(count_other)),
+        }
+
     def _side_by_side_regions_dynamic(self, size_left, size_right):
         usable_w = self.W - 2 * self.min_margin
         if size_left + size_right + self.corridor_gap > usable_w:
@@ -171,6 +184,8 @@ class TwoDigitMNISTCanvasClean(Dataset):
 
             if ok_all:
                 x = canvas * 2.0 - 1.0
+                if self.return_counts:
+                    y.update(self._count_digits(digits))
                 return x, y
 
         raise RuntimeError("Could not generate a valid sample; relax constraints.")
